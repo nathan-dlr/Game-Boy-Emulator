@@ -2,12 +2,12 @@
 #define GB_EMU_CPU_H
 
 void cpu_init();
-void nop();
+void nop(uint8_t opcode);
 void stop();
 void ld();
 void jr();
-void inc();
-void dec();
+void inc(uint8_t opcode);
+void dec(uint8_t opcode);
 void rlca();
 void rrca();
 void rla();
@@ -33,7 +33,7 @@ void di();
 void ei();
 void call();
 void push();
-void rst();
+void rst(uint8_t opcode);
 void rot();
 void bit();
 void res();
