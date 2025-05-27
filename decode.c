@@ -24,6 +24,15 @@ static void conditional_calls(uint8_t opcode);
 static void push_or_nop(uint8_t opcode);
 static void cb_prefixed_ops(uint8_t opcode);
 
+/*
+ * DISASSEMBLY TABLES
+ * These tables aid in decoding instructions as outlined in "DECODING Gameboy Z80 OPCODES" by Scott Mansell
+ * These tables DO NOT directly access any registers
+ */
+static uint8_t REGISTERS_DT[] = {B, C, D, E, H, L, HL, A};
+static uint8_t REGISTER_PAIRS_DT[] = {BC, DE, HL, SP};
+static uint8_t REGISTER_PAIRS2_DT[] = {BC, DE, HL, AF};
+
 typedef void (*opcode_func)(uint8_t);
 static opcode_func decode_lookup[5][8] = {
         {relative_jumps, load_immediate_add_16bit, indirect_loading, inc_dec_16bit, inc,  dec, ld_8bit, ops_on_accumulator},
@@ -37,7 +46,7 @@ static opcode_func decode_lookup[5][8] = {
  * Gets indexes for decode lookup table using OPCODE and jumps to that function
  * Algorithm described in "DECODING Gameboy Z80 OPCODES" by Scott Mansell
 */
-void decode(unsigned char opcode) {
+void decode(uint8_t opcode) {
     unsigned char first_nibble = opcode & 0xF0;
     bool CB_prefix = first_nibble == PREFIX;
     uint8_t first_octal_dig = GET_FIRST_OCTAL_DIGIT(opcode);
@@ -65,7 +74,7 @@ void decode(unsigned char opcode) {
     decode_lookup[first_index][second_index](opcode);
 }
 
-/* 
+/*
  * All below functions take in OPCODE and choose which instruction to
  * execute based off the algorithm described in "DECODING Gameboy Z80 OPCODES" by Scott Mansell
 */
@@ -80,7 +89,7 @@ static void relative_jumps(uint8_t opcode) {
             stop();
             break;
         case 2:
-            ld();
+            ld(fetch_word(), SP, POINTER, REG_16BIT);
             break;
         case 3:
             jr();
@@ -93,7 +102,8 @@ static void relative_jumps(uint8_t opcode) {
 
 static void load_immediate_add_16bit(uint8_t opcode) {
     uint8_t bit_three = GET_BIT_THREE(opcode);
-    bit_three ? add() : ld();
+    uint8_t bits_four_five = GET_BITS_FOUR_FIVE(opcode);
+    bit_three ? add() : ld(REGISTER_PAIRS_DT[bits_four_five], fetch_word(), REG_16BIT, CONST_16BIT);
 }
 
 //TODO adjust parameters once ld is written
@@ -102,16 +112,22 @@ static void indirect_loading(uint8_t opcode) {
     uint8_t bits_four_five = GET_BITS_FOUR_FIVE(opcode);
     switch (bits_four_five) {
         case 0:
-            bit_three ? ld() : ld();
+            bit_three ? ld(A, BC, REG_8BIT, REG_16BIT) : ld(BC, A, REG_16BIT, REG_8BIT);
             break;
         case 1:
-            ld();
+            bit_three ? ld(A, DE, REG_16BIT, REG_16BIT) : ld(DE, A, REG_16BIT, REG_8BIT);
             break;
+        /* TODO COME BACK TO DECIDE HOW TO IMPLEMENT INCREMENT/DECREMENT FOR CASE 2 and 3
+         * IF IN LD WE NEED TO KNOW WHICH OPERAND TO BE INCREMENTED AND IF ITS INCREMENTED OR DECREMENTED
+         * IF WE JUST CALL INC, WE NEED TO MAKE SURE THE CYCLES ARE CORRECT
+        */
         case 2:
-            ld();
+            bit_three ? ld(A, HL, REG_8BIT, REG_16BIT) : ld(HL, A, REG_16BIT, REG_8BIT);
+            inc(HL);
             break;
         case 3:
-            bit_three ? ld(): ld();
+            bit_three ? ld(A, HL, REG_8BIT, REG_16BIT) : ld(HL, A, REG_16BIT, REG_8BIT);
+            dec(HL);
             break;
     }
 }
@@ -122,8 +138,9 @@ static void inc_dec_16bit(uint8_t opcode) {
 }
 
 static void ld_8bit(uint8_t opcode) {
-    uint8_t second_octal_dig = GET_SECOND_OCTAL_DIGIT(opcode);
-    ld();
+    uint8_t reg_dt_index = GET_SECOND_OCTAL_DIGIT(opcode);
+    uint8_t dest_type = reg_dt_index == 6 ? REG_POINTER : REG_8BIT;
+    ld(REGISTERS_DT[reg_dt_index], fetch_byte(), dest_type, CONST_8BIT);
 }
 
 static void ops_on_accumulator(uint8_t opcode) {
@@ -157,8 +174,9 @@ static void ops_on_accumulator(uint8_t opcode) {
 }
 
 static void ld_or_halt(uint8_t opcode) {
-    uint8_t second_octal_dig = GET_SECOND_OCTAL_DIGIT(opcode);
-    second_octal_dig == 6 ? halt() : ld();
+    uint8_t dest_reg = GET_SECOND_OCTAL_DIGIT(opcode);
+    uint8_t source_reg = GET_THIRD_OCTAL_DIGIT(opcode);
+    dest_reg == 6 ? halt() : ld(REGISTERS_DT[dest_reg], REGISTERS_DT[source_reg], REG_8BIT, REG_8BIT);
 }
 
 static void alu(uint8_t opcode) {
@@ -198,16 +216,19 @@ static void mem_mapped_ops(uint8_t opcode) {
             ret();
             break;
         case 4:
-            ld();
+            //ld(0xFF00 + fetch_byte(), A, POINTER, REG_8BIT);
+            ldh();
             break;
         case 5:
             add();
             break;
         case 6:
-            ld();
+            //ld(A, 0xFF00 + fetch_byte(), REG_8BIT, POINTER);
+            ldh();
             break;
         case 7:
-            ld();
+            //TODO set H and C flags
+            ld(HL, SP + (int8_t)fetch_byte(), REG_8BIT, CONST_16BIT);
             break;
     }
 }
@@ -228,7 +249,7 @@ static void pop_various(uint8_t opcode) {
         case 2:
             jp();
         case 3:
-            ld();
+            ld(SP, HL, REG_16BIT, REG_16BIT);
     }
 }
 
@@ -239,16 +260,16 @@ static void conditional_jumps(uint8_t opcode) {
             jp();
             break;
         case 4:
-            ld();
+            ldh();
             break;
         case 5:
-            ld();
+            ld(fetch_word(), A, POINTER, REG_8BIT);
             break;
         case 6:
-            ld();
+            ldh();
             break;
         case 7:
-            ld();
+            ld(A, fetch_word(), REG_8BIT, POINTER);
             break;
     }
 }
