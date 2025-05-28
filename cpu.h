@@ -8,7 +8,7 @@ uint16_t fetch_word();
 void nop(uint8_t opcode);
 void stop();
 void ld(uint16_t dest, uint16_t source, uint8_t dest_type, uint8_t source_type);
-void ldh()
+void ldh(uint16_t dest, uint16_t source, uint8_t source_type);
 void jr();
 void inc(uint8_t opcode);
 void dec(uint8_t opcode);
@@ -69,7 +69,9 @@ enum OPERAND_FORMAT {
     CONST_8BIT,
     CONST_16BIT,
     POINTER,
-    REG_POINTER
+    REG_POINTER,
+    OFFSET,
+    REG_OFFSET,
 };
 
 #endif //GB_EMU_CPU_H

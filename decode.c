@@ -216,15 +216,13 @@ static void mem_mapped_ops(uint8_t opcode) {
             ret();
             break;
         case 4:
-            //ld(0xFF00 + fetch_byte(), A, POINTER, REG_8BIT);
-            ldh();
+            ld(fetch_byte(), A, OFFSET, REG_8BIT);
             break;
         case 5:
             add();
             break;
         case 6:
-            //ld(A, 0xFF00 + fetch_byte(), REG_8BIT, POINTER);
-            ldh();
+            ld(A, fetch_byte(), REG_8BIT, OFFSET);
             break;
         case 7:
             //TODO set H and C flags
@@ -260,13 +258,13 @@ static void conditional_jumps(uint8_t opcode) {
             jp();
             break;
         case 4:
-            ldh();
+            ld(C, A, REG_OFFSET, REG_8BIT);
             break;
         case 5:
             ld(fetch_word(), A, POINTER, REG_8BIT);
             break;
         case 6:
-            ldh();
+            ld(A, C, REG_8BIT, REG_OFFSET);
             break;
         case 7:
             ld(A, fetch_word(), REG_8BIT, POINTER);

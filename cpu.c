@@ -43,7 +43,6 @@ uint8_t read_8bit_reg(uint8_t reg) {
     else {
         return REGS[(reg - 1) / 2] && 0x00FF;
     }
-    reg % 2 == 0 ? (REGS[reg / 2] && 0xFF00) >> 4 : REGS[(reg - 1) / 2] && 0x00FF;
 }
 
 //TODO Change function name
@@ -89,6 +88,12 @@ void ld(uint16_t dest, uint16_t source, uint8_t dest_type, uint8_t source_type) 
         case REG_POINTER:
             source_val = MEMORY[REGS[source]];
             break;
+        case OFFSET:
+            source_val = MEMORY[0xFF00 + source];
+            break;
+        case REG_OFFSET:
+            source_val = MEMORY[0xFF00 + REGS[source]];
+            break;
         //source is 16 or 8 bit constant
         default:
             source_val = source;
@@ -106,6 +111,14 @@ void ld(uint16_t dest, uint16_t source, uint8_t dest_type, uint8_t source_type) 
         case REG_POINTER:
             MEMORY[REGS[dest]] = source_val;
             break;
+        case OFFSET:
+            MEMORY[0xFF00 + dest] = source_val;
+            break;
+        case REG_OFFSET:
+            MEMORY[0xFF00 + REGS[dest]] = source_val;
+            break;
+        //const
+        default:
+            //TODO ERROR HANDLING
     }
 }
-
