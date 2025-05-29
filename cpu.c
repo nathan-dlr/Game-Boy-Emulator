@@ -3,10 +3,15 @@
 #include "cpu.h"
 #include "decode.h"
 #define ZERO_FLAG(f) (f & 0x80)
-#define SUBTRACTION_FLAG(f) (f & 0x40)
-#define HALF_CARRY_FLAG(f) (f & 0x20)
-#define CARRY_FLAG(f) (f & 0x10)
-
+#define SUBTRACTION_FLAG(f) ((f & 0x40) >> 6)
+#define HALF_CARRY_FLAG(f) ((f & 0x20) >> 5)
+#define CARRY_FLAG(f) ((f & 0x10) >> 4)
+#define ZERO_BIT 0x80
+#define NEGATIVE_BIT 0x40
+#define HALF_CARRY_BIT 0x20
+#define CARRY_BIT 0x10
+#define BYTE 1
+#define WORD 2
 
 /* REGISTERS */
 static uint16_t REGS[6];
@@ -70,6 +75,27 @@ uint16_t fetch_word() {
 }
 
 /*
+ * This functions uses the RESULT of an operation and the LENGTH of the operation to check
+ * and set the carry flags and the zero flag
+ */
+static void set_carry_flags(uint32_t result, bool length) {
+    result == 0 ? write_8bit_reg(F, ZERO_BIT) : write_8bit_reg(F, ~ZERO_BIT);
+
+    if ((length == BYTE && result > 0x000F) || (length == WORD && result > 0x00FF)) {
+        write_8bit_reg(F, HALF_CARRY_BIT);
+    }
+    else {
+        write_8bit_reg(F, ~HALF_CARRY_BIT);
+    }
+    if ((length == BYTE && result > 0x00FF) || (length == WORD && result > 0xFFFF)) {
+        write_8bit_reg(F, CARRY_BIT);
+    }
+    else {
+        write_8bit_reg(F, ~CARRY_BIT);
+    }
+}
+
+/*
  * Loads SOURCE into DEST
  * Operand types are describes by DEST_TYPE and SOURCE_TYPE
 */
@@ -127,33 +153,67 @@ void ld(uint16_t dest, uint16_t source, uint8_t dest_type, uint8_t source_type) 
  * Add Instruction
  * Takes in either 8bit/16bit reg, 8bit/16bit const, register pointer (HL), or signed offset
  * Depending on operand, result will be stored in either accumulator, HL, or SP
+ * Zero, carry, and half-carry flags are set
  */
 void add(uint16_t operand, uint8_t operand_type) {
-    uint16_t result;
+    uint32_t result;
     switch (operand_type) {
         case REG_8BIT:
             result = read_8bit_reg(A) + read_8bit_reg(operand);
-            write_8bit_reg(A, result);
+            write_8bit_reg(A, (uint8_t) result);
+            set_carry_flags(result, BYTE);
             break;
         case REG_16BIT:
             result = REGS[HL] + REGS[operand];
-            REGS[HL] = result;
+            REGS[HL] = (uint16_t) result;
+            set_carry_flags(result, WORD);
             break;
         case CONST_8BIT:
             result = read_8bit_reg(A) + operand;
-            write_8bit_reg(A, result);
+            write_8bit_reg(A, (uint8_t) result);
+            set_carry_flags(result, BYTE);
             break;
         case CONST_16BIT:
             result = REGS[HL] + operand;
-            REGS[HL] = result;
+            REGS[HL] = (uint16_t) result;
+            set_carry_flags(result, WORD);
             break;
         case REG_POINTER:
             result = read_8bit_reg(A) + MEMORY[REGS[HL]];
-            write_8bit_reg(A, result);
+            write_8bit_reg(A, (uint8_t) result);
+            set_carry_flags(result, BYTE);
             break;
         case OFFSET:
-            result = REGS[SP] + (int8_t)operand;
+            result = REGS[SP] + (int8_t) operand;
             REGS[SP] = result;
+            set_carry_flags(result, BYTE);
             break;
     }
 }
+
+/*
+ * Add-Carry Instruction
+ * Takes in either 8bit reg, 8bit const, or register pointer (HL)
+ * Result stored in Accumulator Register
+ * Zero, carry, and half-carry flags are set
+ */
+void adc(uint8_t operand, uint8_t operand_type) {
+    uint16_t result;
+    uint8_t carry_bit = HALF_CARRY_FLAG(read_8bit_reg(F));
+    switch (operand_type) {
+        case REG_8BIT:
+            result = REGS[A] + REGS[operand] + carry_bit;
+            break;
+        case CONST_8BIT:
+            result = REGS[A] + operand + carry_bit;
+            break;
+        case REG_POINTER:
+            result = REGS[A] + MEMORY[REGS[HL]] + carry_bit;
+            break;
+
+
+    }
+    REGS[A] = result;
+    set_carry_flags((uint32_t) result, BYTE);
+}
+

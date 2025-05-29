@@ -21,7 +21,7 @@ void scf();
 void ccf();
 void halt();
 void add(uint16_t operand, uint8_t operand_type);
-void adc();
+void adc(uint8_t operand, uint8_t operand_type);
 void sub();
 void sbc();
 void and();

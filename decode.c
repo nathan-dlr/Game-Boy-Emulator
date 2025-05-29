@@ -21,7 +21,7 @@ static void pop_various(uint8_t opcode);
 static void conditional_jumps(uint8_t opcode);
 static void assorted_ops(uint8_t opcode);
 static void conditional_calls(uint8_t opcode);
-static void push_or_nop(uint8_t opcode);
+static void push_call_nop(uint8_t opcode);
 static void cb_prefixed_ops(uint8_t opcode);
 
 /*
@@ -35,11 +35,11 @@ static uint8_t REGISTER_PAIRS2_DT[] = {BC, DE, HL, AF};
 
 typedef void (*opcode_func)(uint8_t);
 static opcode_func decode_lookup[5][8] = {
-        {relative_jumps, load_immediate_add_16bit, indirect_loading, inc_dec_16bit, inc,  dec, ld_8bit, ops_on_accumulator},
-        {ld_or_halt, nop, nop, nop, nop, nop, nop, nop},
-        {alu, nop, nop, nop, nop, nop, nop, nop},
-        {mem_mapped_ops, pop_various, conditional_jumps, assorted_ops, conditional_calls, push_or_nop, alu, rst},
-        {cb_prefixed_ops, nop, nop, nop, nop, nop, nop, nop}
+        {relative_jumps, load_immediate_add_16bit, indirect_loading, inc_dec_16bit, inc,  dec,           ld_8bit, ops_on_accumulator},
+        {ld_or_halt, nop, nop, nop, nop,                                                  nop,           nop,     nop},
+        {alu, nop, nop, nop, nop,                                                         nop,           nop,     nop},
+        {mem_mapped_ops, pop_various, conditional_jumps, assorted_ops, conditional_calls, push_call_nop, alu,     rst},
+        {cb_prefixed_ops, nop, nop, nop, nop,                                             nop,           nop,     nop}
 };
 
 /*
@@ -103,7 +103,8 @@ static void relative_jumps(uint8_t opcode) {
 static void load_immediate_add_16bit(uint8_t opcode) {
     uint8_t bit_three = GET_BIT_THREE(opcode);
     uint8_t bits_four_five = GET_BITS_FOUR_FIVE(opcode);
-    bit_three ? add() : ld(REGISTER_PAIRS_DT[bits_four_five], fetch_word(), REG_16BIT, CONST_16BIT);
+    //TODO figure out which add this is
+    bit_three ? add(HL, REGISTER_PAIRS_DT[bits_four_five]) : ld(REGISTER_PAIRS_DT[bits_four_five], fetch_word(), REG_16BIT, CONST_16BIT);
 }
 
 //TODO adjust parameters once ld is written
@@ -180,13 +181,28 @@ static void ld_or_halt(uint8_t opcode) {
 }
 
 static void alu(uint8_t opcode) {
+    uint8_t first_octal_dig = GET_FIRST_OCTAL_DIGIT(opcode);
     uint8_t second_octal_dig = GET_SECOND_OCTAL_DIGIT(opcode);
+    uint8_t third_octal_dig = GET_THIRD_OCTAL_DIGIT(opcode);
+    //operand is either 8 bit registers, 8 bit imm, or [HL] depending on if first_octal_dig is 2 or 3
+    uint8_t operand;
+    uint8_t operand_type;
+    if (first_octal_dig == 3) {
+        operand = fetch_byte();
+        operand_type = CONST_8BIT;
+    }
+    //first_octal_dig is 2
+    else {
+        operand = REGISTERS_DT[third_octal_dig];
+        operand_type = third_octal_dig == 6 ? REG_POINTER : REG_8BIT;
+    }
+
     switch (second_octal_dig) {
         case 0:
-            add();
+            add(operand, operand_type);
             break;
         case 1:
-            adc();
+            adc(operand, operand_type);
             break;
         case 2:
             sub();
@@ -219,7 +235,7 @@ static void mem_mapped_ops(uint8_t opcode) {
             ld(fetch_byte(), A, OFFSET, REG_8BIT);
             break;
         case 5:
-            add();
+            add(fetch_byte(), OFFSET);
             break;
         case 6:
             ld(A, fetch_byte(), REG_8BIT, OFFSET);
@@ -296,7 +312,7 @@ static void conditional_calls(uint8_t opcode) {
     second_octal_dig < 3 ? call() : nop(opcode);
 }
 
-static void push_or_nop(uint8_t opcode) {
+static void push_call_nop(uint8_t opcode) {
     uint8_t bit_three = GET_BIT_THREE(opcode);
     uint8_t bits_four_five = GET_BITS_FOUR_FIVE(opcode);
     if (!bit_three) {
