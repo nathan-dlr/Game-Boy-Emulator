@@ -119,6 +119,41 @@ void ld(uint16_t dest, uint16_t source, uint8_t dest_type, uint8_t source_type) 
             break;
         //const
         default:
-            //TODO ERROR HANDLING
+        //TODO ERROR HANDLING
+    }
+}
+
+/*
+ * Add Instruction
+ * Takes in either 8bit/16bit reg, 8bit/16bit const, register pointer (HL), or signed offset
+ * Depending on operand, result will be stored in either accumulator, HL, or SP
+ */
+void add(uint16_t operand, uint8_t operand_type) {
+    uint16_t result;
+    switch (operand_type) {
+        case REG_8BIT:
+            result = read_8bit_reg(A) + read_8bit_reg(operand);
+            write_8bit_reg(A, result);
+            break;
+        case REG_16BIT:
+            result = REGS[HL] + REGS[operand];
+            REGS[HL] = result;
+            break;
+        case CONST_8BIT:
+            result = read_8bit_reg(A) + operand;
+            write_8bit_reg(A, result);
+            break;
+        case CONST_16BIT:
+            result = REGS[HL] + operand;
+            REGS[HL] = result;
+            break;
+        case REG_POINTER:
+            result = read_8bit_reg(A) + MEMORY[REGS[HL]];
+            write_8bit_reg(A, result);
+            break;
+        case OFFSET:
+            result = REGS[SP] + (int8_t)operand;
+            REGS[SP] = result;
+            break;
     }
 }
