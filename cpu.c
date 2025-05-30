@@ -10,9 +10,11 @@
 #define NEGATIVE_BIT 0x40
 #define HALF_CARRY_BIT 0x20
 #define CARRY_BIT 0x10
+#define SET_BIT(bit, value) (bit | value)
+#define CLEAR_BIT(bit, value) (~bit | value)
 #define BYTE 1
 #define WORD 2
-
+#define FIRST_NIBBLE(x) (x & 0x000F)
 /* REGISTERS */
 static uint16_t REGS[6];
 
@@ -75,24 +77,55 @@ uint16_t fetch_word() {
 }
 
 /*
- * This functions uses the RESULT of an operation and the LENGTH of the operation to check
- * and set the carry flags and the zero flag
- */
-static void set_carry_flags(uint32_t result, bool length) {
-    result == 0 ? write_8bit_reg(F, ZERO_BIT) : write_8bit_reg(F, ~ZERO_BIT);
-
-    if ((length == BYTE && result > 0x000F) || (length == WORD && result > 0x00FF)) {
-        write_8bit_reg(F, HALF_CARRY_BIT);
+ * Sets zero flag if RESULT is zero, otherwise clears zero flag
+*/
+static void set_zero_flag(uint32_t result) {
+    if (result == 0) {
+        write_8bit_reg(F, SET_BIT(ZERO_BIT, REGS[A]));
     }
     else {
-        write_8bit_reg(F, ~HALF_CARRY_BIT);
+        write_8bit_reg(F, CLEAR_BIT(ZERO_BIT, read_8bit_reg(F)));
+    }
+}
+
+/*
+ * Uses the RESULT of an addition operation and the LENGTH of the operands to set flags
+*/
+static void set_addition_flags(uint32_t result, bool length) {
+    if ((length == BYTE && result > 0x000F) || (length == WORD && result > 0x00FF)) {
+        write_8bit_reg(F, SET_BIT(HALF_CARRY_BIT, REGS[A]));
+    }
+    else {
+        write_8bit_reg(F, CLEAR_BIT(HALF_CARRY_BIT, read_8bit_reg(F)));
     }
     if ((length == BYTE && result > 0x00FF) || (length == WORD && result > 0xFFFF)) {
-        write_8bit_reg(F, CARRY_BIT);
+        write_8bit_reg(F, SET_BIT(CARRY_BIT, REGS[A]));
     }
     else {
-        write_8bit_reg(F, ~CARRY_BIT);
+        write_8bit_reg(F, CLEAR_BIT(HALF_CARRY_BIT, read_8bit_reg(F)));
     }
+    set_zero_flag(result);
+}
+
+/*
+ * Uses the RESULT of a subtraction operation of
+ */
+static void set_subtraction_flags(uint16_t result, uint8_t source_val) {
+    if (FIRST_NIBBLE(source_val) > (FIRST_NIBBLE(REGS[A]))) {
+        //THIS WILL OVERWRITE THE REGISTER, NEED TO OR IT
+        write_8bit_reg(F, SET_BIT(HALF_CARRY_BIT, REGS[A]));
+    }
+    else {
+        write_8bit_reg(F, CLEAR_BIT(HALF_CARRY_BIT, read_8bit_reg(F)));
+    }
+    if (source_val > REGS[A]) {
+        write_8bit_reg(F, SET_BIT(CARRY_BIT, REGS[A]));
+    }
+    else {
+        write_8bit_reg(F, CLEAR_BIT(CARRY_BIT, read_8bit_reg(F)));
+    }
+    write_8bit_reg(F, SET_BIT(NEGATIVE_BIT, REGS[A]));
+    set_zero_flag((uint32_t) result);
 }
 
 /*
@@ -161,40 +194,40 @@ void add(uint16_t operand, uint8_t operand_type) {
         case REG_8BIT:
             result = read_8bit_reg(A) + read_8bit_reg(operand);
             write_8bit_reg(A, (uint8_t) result);
-            set_carry_flags(result, BYTE);
+            set_addition_flags(result, BYTE);
             break;
         case REG_16BIT:
             result = REGS[HL] + REGS[operand];
             REGS[HL] = (uint16_t) result;
-            set_carry_flags(result, WORD);
+            set_addition_flags(result, WORD);
             break;
         case CONST_8BIT:
             result = read_8bit_reg(A) + operand;
             write_8bit_reg(A, (uint8_t) result);
-            set_carry_flags(result, BYTE);
+            set_addition_flags(result, BYTE);
             break;
         case CONST_16BIT:
             result = REGS[HL] + operand;
             REGS[HL] = (uint16_t) result;
-            set_carry_flags(result, WORD);
+            set_addition_flags(result, WORD);
             break;
         case REG_POINTER:
             result = read_8bit_reg(A) + MEMORY[REGS[HL]];
             write_8bit_reg(A, (uint8_t) result);
-            set_carry_flags(result, BYTE);
+            set_addition_flags(result, BYTE);
             break;
         case OFFSET:
             result = REGS[SP] + (int8_t) operand;
             REGS[SP] = result;
-            set_carry_flags(result, BYTE);
+            set_addition_flags(result, BYTE);
             break;
     }
 }
 
 /*
- * Add-Carry Instruction
- * Takes in either 8bit reg, 8bit const, or register pointer (HL)
+ * Add-Carry Instruction - adds operand, carry bit, and accumulator
  * Result stored in Accumulator Register
+ * Takes in either 8bit reg, 8bit const, or register pointer (HL)
  * Zero, carry, and half-carry flags are set
  */
 void adc(uint8_t operand, uint8_t operand_type) {
@@ -214,6 +247,27 @@ void adc(uint8_t operand, uint8_t operand_type) {
 
     }
     REGS[A] = result;
-    set_carry_flags((uint32_t) result, BYTE);
+    set_addition_flags((uint32_t) result, BYTE);
 }
-
+/*
+ * Compare Instruction - Compares the value in A with the value in operand
+ * Results are stored in Flag Register - zero, negative, carry, and half-carry flags are set
+ * Takes in either 8bit reg, 8bit const, or register pointer (HL)
+ */
+void cp(uint8_t operand, uint8_t operand_type) {
+    uint16_t result;
+    uint8_t source_val;
+    switch (operand_type) {
+        case REG_8BIT:
+            source_val = read_8bit_reg(operand);
+            break;
+        case CONST_8BIT:
+            source_val = operand;
+            break;
+        case REG_POINTER:
+            source_val = MEMORY[REGS[HL]];
+            break;
+    }
+    result = REGS[A] - operand;
+    set_subtraction_flags(result, source_val);
+}

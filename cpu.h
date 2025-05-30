@@ -27,7 +27,7 @@ void sbc();
 void and();
 void xor();
 void or();
-void cp();
+void cp(uint8_t operand, uint8_t operand_type);
 void ret();
 void pop();
 void reti();

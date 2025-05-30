@@ -220,7 +220,7 @@ static void alu(uint8_t opcode) {
             or();
             break;
         case 7:
-            cp();
+            cp(operand, operand_type);
             break;
     }
 }
