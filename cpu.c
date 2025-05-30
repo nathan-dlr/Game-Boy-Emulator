@@ -243,12 +243,12 @@ void adc(uint8_t operand, uint8_t operand_type) {
         case REG_POINTER:
             result = REGS[A] + MEMORY[REGS[HL]] + carry_bit;
             break;
-
-
     }
     REGS[A] = result;
     set_addition_flags((uint32_t) result, BYTE);
 }
+
+//TODO CONSIDER MAKING THIS ONE FUNCTION
 /*
  * Compare Instruction - Compares the value in A with the value in operand
  * Results are stored in Flag Register - zero, negative, carry, and half-carry flags are set
@@ -269,5 +269,57 @@ void cp(uint8_t operand, uint8_t operand_type) {
             break;
     }
     result = REGS[A] - operand;
+    set_subtraction_flags(result, source_val);
+}
+
+//TODO make subtract and sbc two different instructions?
+/*
+ * Subtract Instruction - Subtracts the value in A with the value in operand
+ * Results are stored in Accumulator Register
+ * Zero, negative, carry, and half-carry flags are set
+ * Takes in either 8bit reg, 8bit const, or register pointer (HL)
+ */
+void sub(uint8_t operand, uint8_t operand_type) {
+    uint16_t result;
+    uint8_t source_val;
+    switch (operand_type) {
+        case REG_8BIT:
+            source_val = read_8bit_reg(operand);
+            break;
+        case CONST_8BIT:
+            source_val = operand;
+            break;
+        case REG_POINTER:
+            source_val = MEMORY[REGS[HL]];
+            break;
+    }
+    result = REGS[A] - operand;
+    REGS[A] = result;
+    set_subtraction_flags(result, source_val);
+}
+
+/*
+ * Subtract Carry Instruction - Subtracts the value in A with the value in operand and the carry bit
+ * Results are stored in Accumulator Register
+ * Zero, negative, carry, and half-carry flags are set
+ * Takes in either 8bit reg, 8bit const, or register pointer (HL)
+ */
+void sbc(uint8_t operand, uint8_t operand_type) {
+    uint16_t result;
+    uint8_t source_val;
+    uint8_t carry_bit = HALF_CARRY_FLAG(read_8bit_reg(F));
+    switch (operand_type) {
+        case REG_8BIT:
+            source_val = read_8bit_reg(operand);
+            break;
+        case CONST_8BIT:
+            source_val = operand;
+            break;
+        case REG_POINTER:
+            source_val = MEMORY[REGS[HL]];
+            break;
+    }
+    result = REGS[A] - operand - carry_bit;
+    REGS[A] = result;
     set_subtraction_flags(result, source_val);
 }
