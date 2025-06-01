@@ -211,13 +211,13 @@ static void alu(uint8_t opcode) {
             sbc(operand, operand_type);
             break;
         case 4:
-            and();
+            and(operand, operand_type);
             break;
         case 5:
-            xor();
+            xor(operand, operand_type);
             break;
         case 6:
-            or();
+            or(operand, operand_type);
             break;
         case 7:
             cp(operand, operand_type);

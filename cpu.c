@@ -76,12 +76,13 @@ uint16_t fetch_word() {
     return word;
 }
 
+//TODO can we reduce from uint32?
 /*
  * Sets zero flag if RESULT is zero, otherwise clears zero flag
 */
 static void set_zero_flag(uint32_t result) {
     if (result == 0) {
-        write_8bit_reg(F, SET_BIT(ZERO_BIT, REGS[A]));
+        write_8bit_reg(F, SET_BIT(ZERO_BIT, read_8bit_reg(A)));
     }
     else {
         write_8bit_reg(F, CLEAR_BIT(ZERO_BIT, read_8bit_reg(F)));
@@ -93,13 +94,13 @@ static void set_zero_flag(uint32_t result) {
 */
 static void set_addition_flags(uint32_t result, bool length) {
     if ((length == BYTE && result > 0x000F) || (length == WORD && result > 0x00FF)) {
-        write_8bit_reg(F, SET_BIT(HALF_CARRY_BIT, REGS[A]));
+        write_8bit_reg(F, SET_BIT(HALF_CARRY_BIT, read_8bit_reg(A)));
     }
     else {
         write_8bit_reg(F, CLEAR_BIT(HALF_CARRY_BIT, read_8bit_reg(F)));
     }
     if ((length == BYTE && result > 0x00FF) || (length == WORD && result > 0xFFFF)) {
-        write_8bit_reg(F, SET_BIT(CARRY_BIT, REGS[A]));
+        write_8bit_reg(F, SET_BIT(CARRY_BIT, read_8bit_reg(A)));
     }
     else {
         write_8bit_reg(F, CLEAR_BIT(HALF_CARRY_BIT, read_8bit_reg(F)));
@@ -111,20 +112,20 @@ static void set_addition_flags(uint32_t result, bool length) {
  * Uses the RESULT of a subtraction operation of
  */
 static void set_subtraction_flags(uint16_t result, uint8_t source_val) {
-    if (FIRST_NIBBLE(source_val) > (FIRST_NIBBLE(REGS[A]))) {
+    if (FIRST_NIBBLE(source_val) > (FIRST_NIBBLE(read_8bit_reg(A)))) {
         //THIS WILL OVERWRITE THE REGISTER, NEED TO OR IT
-        write_8bit_reg(F, SET_BIT(HALF_CARRY_BIT, REGS[A]));
+        write_8bit_reg(F, SET_BIT(HALF_CARRY_BIT, read_8bit_reg(A)));
     }
     else {
         write_8bit_reg(F, CLEAR_BIT(HALF_CARRY_BIT, read_8bit_reg(F)));
     }
-    if (source_val > REGS[A]) {
-        write_8bit_reg(F, SET_BIT(CARRY_BIT, REGS[A]));
+    if (source_val > read_8bit_reg(A)) {
+        write_8bit_reg(F, SET_BIT(CARRY_BIT, read_8bit_reg(A)));
     }
     else {
         write_8bit_reg(F, CLEAR_BIT(CARRY_BIT, read_8bit_reg(F)));
     }
-    write_8bit_reg(F, SET_BIT(NEGATIVE_BIT, REGS[A]));
+    write_8bit_reg(F, SET_BIT(NEGATIVE_BIT, read_8bit_reg(A)));
     set_zero_flag((uint32_t) result);
 }
 
@@ -265,7 +266,7 @@ void adc(uint8_t operand, uint8_t operand_type) {
  */
 void cp(uint8_t operand, uint8_t operand_type) {
     uint8_t source_val = get_8bit_operand(operand, operand_type);
-    uint16_t result = REGS[A] - operand;
+    uint16_t result = read_8bit_reg(A) - source_val;
     set_subtraction_flags(result, source_val);
 }
 
@@ -277,7 +278,7 @@ void cp(uint8_t operand, uint8_t operand_type) {
  */
 void sub(uint8_t operand, uint8_t operand_type) {
     uint8_t source_val = get_8bit_operand(operand, operand_type);
-    uint16_t result = REGS[A] - operand;
+    uint16_t result = read_8bit_reg(A) - source_val;
     write_8bit_reg(A, (uint8_t) result);
     set_subtraction_flags(result, source_val);
 }
@@ -291,7 +292,47 @@ void sub(uint8_t operand, uint8_t operand_type) {
 void sbc(uint8_t operand, uint8_t operand_type) {
     uint8_t source_val = get_8bit_operand(operand, operand_type);
     uint8_t carry_bit = HALF_CARRY_FLAG(read_8bit_reg(F));
-    uint16_t result = REGS[A] - operand - carry_bit;
+    uint16_t result = read_8bit_reg(A) - source_val - carry_bit;
     write_8bit_reg(A, (uint8_t) result);
     set_subtraction_flags(result, source_val);
+}
+
+/*
+ * Bitwise AND instruction
+ * Results are stored in Accumulator Register
+ * Zero and half-carry flags are set
+ * Takes in either 8bit reg, 8bit const, or register pointer (HL)
+*/
+void and(uint8_t operand, uint8_t operand_type) {
+    uint8_t source_val = get_8bit_operand(operand, operand_type);
+    uint8_t result = read_8bit_reg(A) & source_val;
+    write_8bit_reg(A, source_val);
+    set_zero_flag((uint32_t) result);
+    write_8bit_reg(F, SET_BIT(HALF_CARRY_BIT, read_8bit_reg(A)));
+}
+
+/*
+ * Bitwise OR instruction
+ * Results are stored in Accumulator Register
+ * Zero flag is set
+ * Takes in either 8bit reg, 8bit const, or register pointer (HL)
+*/
+void or(uint8_t operand, uint8_t operand_type) {
+    uint8_t source_val = get_8bit_operand(operand, operand_type);
+    uint8_t result = read_8bit_reg(A) | source_val;
+    write_8bit_reg(A, source_val);
+    set_zero_flag((uint32_t) result);
+}
+
+/*
+ * Bitwise XOR instruction
+ * Results are stored in Accumulator Register
+ * Zero flag is set
+ * Takes in either 8bit reg, 8bit const, or register pointer (HL)
+*/
+void xor(uint8_t operand, uint8_t operand_type) {
+    uint8_t source_val = get_8bit_operand(operand, operand_type);
+    uint8_t result = read_8bit_reg(A) ^ source_val;
+    write_8bit_reg(A, source_val);
+    set_zero_flag((uint32_t) result);
 }
