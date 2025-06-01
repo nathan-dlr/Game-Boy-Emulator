@@ -22,7 +22,9 @@ void ccf();
 void halt();
 void add(uint16_t operand, uint8_t operand_type);
 void adc(uint8_t operand, uint8_t operand_type);
-void subtraction(uint8_t operand, uint8_t operand_type, uint8_t instruction);
+void sub(uint8_t operand, uint8_t operand_type);
+void sbc(uint8_t operand, uint8_t operand_type);
+void cp(uint8_t operand, uint8_t operand_type);
 void and();
 void xor();
 void or();
@@ -76,4 +78,6 @@ enum SUBTRACTION_TYPE {
     SBC,
     CP
 };
+
+enum LOGIC_TYPE
 #endif //GB_EMU_CPU_H

@@ -45,10 +45,10 @@ static void write_8bit_reg(uint8_t reg, uint8_t val) {
 
 uint8_t read_8bit_reg(uint8_t reg) {
     if (reg % 2 == 0) {
-        return (REGS[reg / 2] && 0xFF00) >> 4;
+        return (REGS[reg / 2] & 0xFF00) >> 4;
     }
     else {
-        return REGS[(reg - 1) / 2] && 0x00FF;
+        return REGS[(reg - 1) / 2] & 0x00FF;
     }
 }
 
@@ -129,11 +129,31 @@ static void set_subtraction_flags(uint16_t result, uint8_t source_val) {
 }
 
 /*
+ * Returns value held by OPERAND of OPERAND_TYPE
+*/
+uint8_t get_8bit_operand(uint8_t operand, uint8_t operand_type) {
+    uint8_t source_val = 0;
+
+    switch (operand_type) {
+        case REG_8BIT:
+            source_val = read_8bit_reg(operand);
+            break;
+        case CONST_8BIT:
+            source_val = operand;
+            break;
+        case REG_POINTER:
+            source_val = MEMORY[REGS[HL]];
+            break;
+    }
+    return source_val;
+}
+
+/*
  * Loads SOURCE into DEST
  * Operand types are describes by DEST_TYPE and SOURCE_TYPE
 */
 void ld(uint16_t dest, uint16_t source, uint8_t dest_type, uint8_t source_type) {
-    uint8_t source_val;
+    uint8_t source_val = 0;
     switch (source_type) {
         case REG_8BIT:
             source_val = read_8bit_reg(source_val);
@@ -231,51 +251,47 @@ void add(uint16_t operand, uint8_t operand_type) {
  * Zero, carry, and half-carry flags are set
  */
 void adc(uint8_t operand, uint8_t operand_type) {
-    uint16_t result;
     uint8_t carry_bit = HALF_CARRY_FLAG(read_8bit_reg(F));
-    switch (operand_type) {
-        case REG_8BIT:
-            result = REGS[A] + REGS[operand] + carry_bit;
-            break;
-        case CONST_8BIT:
-            result = REGS[A] + operand + carry_bit;
-            break;
-        case REG_POINTER:
-            result = REGS[A] + MEMORY[REGS[HL]] + carry_bit;
-            break;
-    }
-    REGS[A] = result;
-    set_addition_flags((uint32_t) result, BYTE);
+    uint8_t source_val = get_8bit_operand(operand, operand_type);
+    uint32_t result = source_val + carry_bit;
+    write_8bit_reg(A, (uint8_t) result);
+    set_addition_flags(result, BYTE);
 }
 
 /*
- * Executes subtraction instructions: SUB, SBC, CP
- * Subtracts the values of operand with the value in accumulator register
- * SBC includes carry bit
- * CP sets flags but doesn't store value
- * For SUB and SBC, results are stored in accumulator register
+ * Compare Instruction - Compares the value in A with the value in operand
+ * Results are stored in Flag Register - zero, negative, carry, and half-carry flags are set
  * Takes in either 8bit reg, 8bit const, or register pointer (HL)
  */
-void subtract(uint8_t operand, uint8_t operand_type, uint8_t sub_type) {
-    uint16_t result = 0;
-    uint8_t source_val = 0;
-    uint8_t carry_bit = 0;
+void cp(uint8_t operand, uint8_t operand_type) {
+    uint8_t source_val = get_8bit_operand(operand, operand_type);
+    uint16_t result = REGS[A] - operand;
+    set_subtraction_flags(result, source_val);
+}
 
-    switch (operand_type) {
-        case REG_8BIT:
-            source_val = read_8bit_reg(operand);
-            break;
-        case CONST_8BIT:
-            source_val = operand;
-            break;
-        case REG_POINTER:
-            source_val = MEMORY[REGS[HL]];
-            break;
-    }
-    carry_bit = sub_type == SBC ? HALF_CARRY_FLAG(read_8bit_reg(F)) : 0;
-    result = REGS[A] - operand - carry_bit;
-    if (sub_type != CP) {
-        REGS[A] = result;
-    }
+/*
+ * Subtract Instruction - Subtracts the value in A with the value in operand
+ * Results are stored in Accumulator Register
+ * Zero, negative, carry, and half-carry flags are set
+ * Takes in either 8bit reg, 8bit const, or register pointer (HL)
+ */
+void sub(uint8_t operand, uint8_t operand_type) {
+    uint8_t source_val = get_8bit_operand(operand, operand_type);
+    uint16_t result = REGS[A] - operand;
+    write_8bit_reg(A, (uint8_t) result);
+    set_subtraction_flags(result, source_val);
+}
+
+/*
+ * Subtract Carry Instruction - Subtracts the value in A with the value in operand and the carry bit
+ * Results are stored in Accumulator Register
+ * Zero, negative, carry, and half-carry flags are set
+ * Takes in either 8bit reg, 8bit const, or register pointer (HL)
+ */
+void sbc(uint8_t operand, uint8_t operand_type) {
+    uint8_t source_val = get_8bit_operand(operand, operand_type);
+    uint8_t carry_bit = HALF_CARRY_FLAG(read_8bit_reg(F));
+    uint16_t result = REGS[A] - operand - carry_bit;
+    write_8bit_reg(A, (uint8_t) result);
     set_subtraction_flags(result, source_val);
 }
