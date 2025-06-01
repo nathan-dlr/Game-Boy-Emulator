@@ -248,40 +248,19 @@ void adc(uint8_t operand, uint8_t operand_type) {
     set_addition_flags((uint32_t) result, BYTE);
 }
 
-//TODO CONSIDER MAKING THIS ONE FUNCTION
 /*
- * Compare Instruction - Compares the value in A with the value in operand
- * Results are stored in Flag Register - zero, negative, carry, and half-carry flags are set
+ * Executes subtraction instructions: SUB, SBC, CP
+ * Subtracts the values of operand with the value in accumulator register
+ * SBC includes carry bit
+ * CP sets flags but doesn't store value
+ * For SUB and SBC, results are stored in accumulator register
  * Takes in either 8bit reg, 8bit const, or register pointer (HL)
  */
-void cp(uint8_t operand, uint8_t operand_type) {
-    uint16_t result;
-    uint8_t source_val;
-    switch (operand_type) {
-        case REG_8BIT:
-            source_val = read_8bit_reg(operand);
-            break;
-        case CONST_8BIT:
-            source_val = operand;
-            break;
-        case REG_POINTER:
-            source_val = MEMORY[REGS[HL]];
-            break;
-    }
-    result = REGS[A] - operand;
-    set_subtraction_flags(result, source_val);
-}
+void subtract(uint8_t operand, uint8_t operand_type, uint8_t sub_type) {
+    uint16_t result = 0;
+    uint8_t source_val = 0;
+    uint8_t carry_bit = 0;
 
-//TODO make subtract and sbc two different instructions?
-/*
- * Subtract Instruction - Subtracts the value in A with the value in operand
- * Results are stored in Accumulator Register
- * Zero, negative, carry, and half-carry flags are set
- * Takes in either 8bit reg, 8bit const, or register pointer (HL)
- */
-void sub(uint8_t operand, uint8_t operand_type) {
-    uint16_t result;
-    uint8_t source_val;
     switch (operand_type) {
         case REG_8BIT:
             source_val = read_8bit_reg(operand);
@@ -293,33 +272,10 @@ void sub(uint8_t operand, uint8_t operand_type) {
             source_val = MEMORY[REGS[HL]];
             break;
     }
-    result = REGS[A] - operand;
-    REGS[A] = result;
-    set_subtraction_flags(result, source_val);
-}
-
-/*
- * Subtract Carry Instruction - Subtracts the value in A with the value in operand and the carry bit
- * Results are stored in Accumulator Register
- * Zero, negative, carry, and half-carry flags are set
- * Takes in either 8bit reg, 8bit const, or register pointer (HL)
- */
-void sbc(uint8_t operand, uint8_t operand_type) {
-    uint16_t result;
-    uint8_t source_val;
-    uint8_t carry_bit = HALF_CARRY_FLAG(read_8bit_reg(F));
-    switch (operand_type) {
-        case REG_8BIT:
-            source_val = read_8bit_reg(operand);
-            break;
-        case CONST_8BIT:
-            source_val = operand;
-            break;
-        case REG_POINTER:
-            source_val = MEMORY[REGS[HL]];
-            break;
-    }
+    carry_bit = sub_type == SBC ? HALF_CARRY_FLAG(read_8bit_reg(F)) : 0;
     result = REGS[A] - operand - carry_bit;
-    REGS[A] = result;
+    if (sub_type != CP) {
+        REGS[A] = result;
+    }
     set_subtraction_flags(result, source_val);
 }

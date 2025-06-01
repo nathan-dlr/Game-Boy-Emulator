@@ -205,10 +205,10 @@ static void alu(uint8_t opcode) {
             adc(operand, operand_type);
             break;
         case 2:
-            sub(operand, operand_type);
+            subtraction(operand, operand_type, SUB);
             break;
         case 3:
-            sbc(operand, operand_type);
+            subtraction(operand, operand_type, SBC);
             break;
         case 4:
             and();
@@ -220,7 +220,7 @@ static void alu(uint8_t opcode) {
             or();
             break;
         case 7:
-            cp(operand, operand_type);
+            subtraction(operand, operand_type, CP);
             break;
     }
 }

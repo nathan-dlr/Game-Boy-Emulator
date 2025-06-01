@@ -22,12 +22,10 @@ void ccf();
 void halt();
 void add(uint16_t operand, uint8_t operand_type);
 void adc(uint8_t operand, uint8_t operand_type);
-void sub(uint8_t operand, uint8_t operand_type);
-void sbc(uint8_t operand, uint8_t operand_type);
+void subtraction(uint8_t operand, uint8_t operand_type, uint8_t instruction);
 void and();
 void xor();
 void or();
-void cp(uint8_t operand, uint8_t operand_type);
 void ret();
 void pop();
 void reti();
@@ -73,4 +71,9 @@ enum OPERAND_FORMAT {
     REG_OFFSET,
 };
 
+enum SUBTRACTION_TYPE {
+    SUB,
+    SBC,
+    CP
+};
 #endif //GB_EMU_CPU_H
