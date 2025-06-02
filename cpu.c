@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <stdbool.h>
 #include "gb.h"
 #include "cpu.h"
 #include "decode.h"
@@ -82,7 +83,7 @@ uint16_t fetch_word() {
 */
 static void set_zero_flag(uint32_t result) {
     if (result == 0) {
-        write_8bit_reg(F, SET_BIT(ZERO_BIT, read_8bit_reg(A)));
+        write_8bit_reg(F, SET_BIT(ZERO_BIT, read_8bit_reg(F)));
     }
     else {
         write_8bit_reg(F, CLEAR_BIT(ZERO_BIT, read_8bit_reg(F)));
@@ -94,13 +95,13 @@ static void set_zero_flag(uint32_t result) {
 */
 static void set_addition_flags(uint32_t result, bool length) {
     if ((length == BYTE && result > 0x000F) || (length == WORD && result > 0x00FF)) {
-        write_8bit_reg(F, SET_BIT(HALF_CARRY_BIT, read_8bit_reg(A)));
+        write_8bit_reg(F, SET_BIT(HALF_CARRY_BIT, read_8bit_reg(F)));
     }
     else {
         write_8bit_reg(F, CLEAR_BIT(HALF_CARRY_BIT, read_8bit_reg(F)));
     }
     if ((length == BYTE && result > 0x00FF) || (length == WORD && result > 0xFFFF)) {
-        write_8bit_reg(F, SET_BIT(CARRY_BIT, read_8bit_reg(A)));
+        write_8bit_reg(F, SET_BIT(CARRY_BIT, read_8bit_reg(F)));
     }
     else {
         write_8bit_reg(F, CLEAR_BIT(HALF_CARRY_BIT, read_8bit_reg(F)));
@@ -109,23 +110,23 @@ static void set_addition_flags(uint32_t result, bool length) {
 }
 
 /*
- * Uses the RESULT of a subtraction operation of
+ * Uses the RESULT of a subtraction operation to set zero, half carry, and carry bit
  */
 static void set_subtraction_flags(uint16_t result, uint8_t source_val) {
-    if (FIRST_NIBBLE(source_val) > (FIRST_NIBBLE(read_8bit_reg(A)))) {
+    if (FIRST_NIBBLE(source_val) > (FIRST_NIBBLE(read_8bit_reg(F)))) {
         //THIS WILL OVERWRITE THE REGISTER, NEED TO OR IT
-        write_8bit_reg(F, SET_BIT(HALF_CARRY_BIT, read_8bit_reg(A)));
+        write_8bit_reg(F, SET_BIT(HALF_CARRY_BIT, read_8bit_reg(F)));
     }
     else {
         write_8bit_reg(F, CLEAR_BIT(HALF_CARRY_BIT, read_8bit_reg(F)));
     }
     if (source_val > read_8bit_reg(A)) {
-        write_8bit_reg(F, SET_BIT(CARRY_BIT, read_8bit_reg(A)));
+        write_8bit_reg(F, SET_BIT(CARRY_BIT, read_8bit_reg(F)));
     }
     else {
         write_8bit_reg(F, CLEAR_BIT(CARRY_BIT, read_8bit_reg(F)));
     }
-    write_8bit_reg(F, SET_BIT(NEGATIVE_BIT, read_8bit_reg(A)));
+    write_8bit_reg(F, SET_BIT(NEGATIVE_BIT, read_8bit_reg(F)));
     set_zero_flag((uint32_t) result);
 }
 
@@ -303,6 +304,7 @@ void sbc(uint8_t operand, uint8_t operand_type) {
  * Zero and half-carry flags are set
  * Takes in either 8bit reg, 8bit const, or register pointer (HL)
 */
+//TODO if document says flag needs to be set to zero make sure to clear it
 void and(uint8_t operand, uint8_t operand_type) {
     uint8_t source_val = get_8bit_operand(operand, operand_type);
     uint8_t result = read_8bit_reg(A) & source_val;
@@ -335,4 +337,364 @@ void xor(uint8_t operand, uint8_t operand_type) {
     uint8_t result = read_8bit_reg(A) ^ source_val;
     write_8bit_reg(A, source_val);
     set_zero_flag((uint32_t) result);
+}
+
+/*
+ * Increment instruction
+ * Increments byte held by OPERAND
+ */
+void inc(uint8_t operand, uint8_t operand_type) {
+    switch (operand_type) {
+        case REG_8BIT:
+            write_8bit_reg(operand, read_8bit_reg(operand) + 1);
+            break;
+        case REG_16BIT:
+            REGS[operand] = REGS[operand] + 1;
+        case REG_POINTER:
+            MEMORY[REGS[operand]] = MEMORY[REGS[operand]] + 1;
+
+    }
+}
+
+/*
+ * Decrement instruction
+ * Decrements byte held by OPERAND
+ */
+void dec(uint8_t operand, uint8_t operand_type) {
+    switch (operand_type) {
+        case REG_8BIT:
+            write_8bit_reg(operand, read_8bit_reg(operand) - 1);
+            break;
+        case REG_16BIT:
+            REGS[operand] = REGS[operand] - 1;
+        case REG_POINTER:
+            MEMORY[REGS[operand]] = MEMORY[REGS[operand]] - 1;
+
+    }
+}
+
+/*
+ * Complement accumulator instruction
+ * Replaces value in accumulator with its complement
+ */
+void cpl() {
+    write_8bit_reg(A, ~read_8bit_reg(A));
+    write_8bit_reg(F, SET_BIT(NEGATIVE_BIT | HALF_CARRY_BIT, read_8bit_reg(F)));
+}
+
+/*
+ * Bit instruction
+ * Tests if BIT in SOURCE_REG is set, sets the zero flag if not set
+ * Source reg is either 8-bit reg or byte pointed to by HL, indicated by REG_8BIT
+ */
+void bit(uint8_t bit, uint8_t source_reg, bool reg_8bit) {
+    uint8_t source_val = reg_8bit ? read_8bit_reg(source_reg) : MEMORY[REGS[HL]];
+    bool set = source_val & (0x0001 << bit);
+
+    if (set) {
+        write_8bit_reg(F, SET_BIT(ZERO_BIT, read_8bit_reg(F)));
+    }
+    write_8bit_reg(F, CLEAR_BIT(NEGATIVE_BIT, read_8bit_reg(F)));
+    write_8bit_reg(F, SET_BIT(HALF_CARRY_BIT, read_8bit_reg(F)));
+}
+
+/*
+ * Reset (clear) bit instruction
+ * Clears BIT in SOURCE_REG
+ * Source reg is either 8-bit reg or byte pointed to by HL, indicated by REG_8BIT
+ */
+void res(uint8_t bit, uint8_t source_reg, bool reg_8bit) {
+    if (reg_8bit) {
+        write_8bit_reg(source_reg, CLEAR_BIT(bit, source_reg));
+    }
+    else {
+        MEMORY[REGS[HL]] = CLEAR_BIT(bit, MEMORY[REGS[HL]]);
+    }
+}
+
+
+/*
+ * Set bit instruction
+ * Sets BIT in SOURCE_REG
+ * Source reg is either 8-bit reg or byte pointed to by HL, indicated by REG_8BIT
+ */
+void set(uint8_t bit, uint8_t source_reg, bool reg_8bit) {
+    if (reg_8bit) {
+        write_8bit_reg(source_reg, SET_BIT(bit, source_reg));
+    }
+    else {
+        MEMORY[REGS[HL]] = SET_BIT(bit, MEMORY[REGS[HL]]);
+    }
+}
+
+/*
+ * Rotate left instruction
+ * Rotates bits in SOURCE_REG left, through the carry flag
+ * Source reg is either 8-bit reg or byte pointed to by HL, indicated by REG_8BIT
+ */
+void rl(uint8_t source_reg, bool reg_8bit) {
+    uint8_t carry_flag_old = CARRY_FLAG(read_8bit_reg(F));
+    uint8_t source_val = read_8bit_reg(source_reg);
+    uint8_t carry_flag_new = source_val & 0x80 ? 1 : 0;
+    uint8_t new_val = (source_val << 1) | carry_flag_old;
+    reg_8bit ? write_8bit_reg(source_reg, new_val) : (MEMORY[REGS[HL]] = new_val);
+
+    //TODO make this setting of flags its own function
+    set_zero_flag((uint32_t) new_val);
+    write_8bit_reg(F, CLEAR_BIT(NEGATIVE_BIT, read_8bit_reg(F)));
+    write_8bit_reg(F, CLEAR_BIT(HALF_CARRY_BIT, read_8bit_reg(F)));
+    if (carry_flag_new) {
+        write_8bit_reg(F, SET_BIT(CARRY_BIT, read_8bit_reg(F)));
+    }
+    else {
+        write_8bit_reg(F, CLEAR_BIT(CARRY_BIT, read_8bit_reg(F)));
+    }
+}
+
+/*
+ * Rotate left accumulator instruction
+ * Rotates bits in accumulator left, through the carry flag
+ * Source reg is either 8-bit reg or byte pointed to by HL, indicated by REG_8BIT
+ */
+void rla() {
+    uint8_t carry_flag_old = CARRY_FLAG(read_8bit_reg(F));
+    uint8_t source_val = read_8bit_reg(A);
+    uint8_t carry_flag_new = source_val & 0x80 ? 1 : 0;
+    uint8_t new_val = (source_val << 1) | carry_flag_old;
+    write_8bit_reg(A, new_val);
+
+    set_zero_flag((uint32_t) new_val);
+    write_8bit_reg(F, CLEAR_BIT(NEGATIVE_BIT, read_8bit_reg(F)));
+    write_8bit_reg(F, CLEAR_BIT(HALF_CARRY_BIT, read_8bit_reg(F)));
+    if (carry_flag_new) {
+        write_8bit_reg(F, SET_BIT(CARRY_BIT, read_8bit_reg(F)));
+    }
+    else {
+        write_8bit_reg(F, CLEAR_BIT(CARRY_BIT, read_8bit_reg(F)));
+    }
+}
+
+/*
+ * Rotate left circular instruction
+ * Rotate bits in SOURCE_REG left circularly, from MSB to LSB
+ * Source reg is either 8-bit reg or byte pointed to by HL, indicated by REG_8BIT
+ */
+void rlc(uint8_t source_reg, bool reg_8bit) {
+    uint8_t source_val = reg_8bit ? read_8bit_reg(source_reg) : MEMORY[REGS[HL]];
+    uint8_t carry_flag_new = source_val & 0x80 ? 1 : 0;
+    uint8_t new_val = (source_val << 1) | carry_flag_new;
+    reg_8bit ? write_8bit_reg(source_reg, new_val) : (MEMORY[REGS[HL]] = new_val);
+
+    set_zero_flag((uint32_t) source_val);
+    write_8bit_reg(F, CLEAR_BIT(NEGATIVE_BIT, read_8bit_reg(F)));
+    write_8bit_reg(F, CLEAR_BIT(HALF_CARRY_BIT, read_8bit_reg(F)));
+    if (carry_flag_new) {
+        write_8bit_reg(F, SET_BIT(CARRY_BIT, read_8bit_reg(F)));
+    }
+    else {
+        write_8bit_reg(F, CLEAR_BIT(CARRY_BIT, read_8bit_reg(F)));
+    }
+}
+
+/*
+ * Rotate left circular accumulator instruction
+ * Rotate bits in accumulator left circularly, from MSB to LSB
+ */
+void rlca() {
+    uint8_t source_val = read_8bit_reg(A);
+    uint8_t carry_flag_new = source_val & 0x80 ? 1 : 0;
+    uint8_t new_val = (source_val << 1) | carry_flag_new;
+    write_8bit_reg(A, new_val);
+
+    write_8bit_reg(F, CLEAR_BIT(ZERO_BIT, read_8bit_reg(F)));
+    write_8bit_reg(F, CLEAR_BIT(NEGATIVE_BIT, read_8bit_reg(F)));
+    write_8bit_reg(F, CLEAR_BIT(HALF_CARRY_BIT, read_8bit_reg(F)));
+    if (carry_flag_new) {
+        write_8bit_reg(F, SET_BIT(CARRY_BIT, read_8bit_reg(F)));
+    }
+    else {
+        write_8bit_reg(F, CLEAR_BIT(CARRY_BIT, read_8bit_reg(F)));
+    }
+}
+
+/*
+ * Rotate right instruction
+ * Rotate bits in SOURCE_REG right, through the carry flag
+ * Source reg is either 8-bit reg or byte pointed to by HL, indicated by REG_8BIT
+ */
+void rr(uint8_t source_reg, bool reg_8bit) {
+    uint8_t carry_flag_old = CARRY_FLAG(read_8bit_reg(F));
+    uint8_t source_val = reg_8bit ? read_8bit_reg(source_reg) : MEMORY[REGS[HL]];
+    uint8_t carry_flag_new = source_val & 0x01 ? 1 : 0;
+    uint8_t new_val = (source_val >> 1);
+    new_val |= carry_flag_old << 8;
+    reg_8bit ? write_8bit_reg(source_reg, new_val) : (MEMORY[REGS[HL]] = new_val);
+
+
+    //TODO make this setting of flags its own function
+    set_zero_flag((uint32_t) new_val);
+    write_8bit_reg(F, CLEAR_BIT(NEGATIVE_BIT, read_8bit_reg(F)));
+    write_8bit_reg(F, CLEAR_BIT(HALF_CARRY_BIT, read_8bit_reg(F)));
+    if (carry_flag_new) {
+        write_8bit_reg(F, SET_BIT(CARRY_BIT, read_8bit_reg(F)));
+    }
+    else {
+        write_8bit_reg(F, CLEAR_BIT(CARRY_BIT, read_8bit_reg(F)));
+    }
+}
+
+/*
+ * Rotate right accumulator instruction
+ * Rotate bits in SOURCE_REG right, through the carry flag
+ * SOURCE reg is either 8-bit reg or byte pointed to by HL, indicated by REG_8BIT
+ */
+void rra() {
+    uint8_t carry_flag_old = CARRY_FLAG(read_8bit_reg(F));
+    uint8_t source_val = read_8bit_reg(A);
+    uint8_t carry_flag_new = source_val & 0x01 ? 1 : 0;
+    uint8_t new_val = (source_val >> 1);
+    new_val |= carry_flag_old << 8;
+    write_8bit_reg(A, new_val);
+
+    write_8bit_reg(F, CLEAR_BIT(ZERO_BIT, read_8bit_reg(F)));
+    write_8bit_reg(F, CLEAR_BIT(NEGATIVE_BIT, read_8bit_reg(F)));
+    write_8bit_reg(F, CLEAR_BIT(HALF_CARRY_BIT, read_8bit_reg(F)));
+    if (carry_flag_new) {
+        write_8bit_reg(F, SET_BIT(CARRY_BIT, read_8bit_reg(F)));
+    }
+    else {
+        write_8bit_reg(F, CLEAR_BIT(CARRY_BIT, read_8bit_reg(F)));
+    }
+}
+
+/*
+ * Rotate right circular instruction
+ * Rotate bits in SOURCE_REG right, from LSB to MSB
+ * Source reg is either 8-bit reg or byte pointed to by HL, indicated by REG_8BIT
+ */
+void rrc(uint8_t source_reg, bool reg_8bit) {
+    uint8_t source_val = reg_8bit ? read_8bit_reg(source_reg) : MEMORY[REGS[HL]];
+    uint8_t carry_flag_new = source_val & 0x01 ? 1 : 0;
+    uint8_t new_msb = source_val & 0x0001;
+    uint8_t new_val = (source_val >> 1);
+    new_val |= new_msb << 8;
+    reg_8bit ? write_8bit_reg(source_reg, new_val) : (MEMORY[REGS[HL]] = new_val);
+
+    set_zero_flag((uint32_t) new_val);
+    write_8bit_reg(F, CLEAR_BIT(NEGATIVE_BIT, read_8bit_reg(F)));
+    write_8bit_reg(F, CLEAR_BIT(HALF_CARRY_BIT, read_8bit_reg(F)));
+    if (carry_flag_new) {
+        write_8bit_reg(F, SET_BIT(CARRY_BIT, read_8bit_reg(F)));
+    }
+    else {
+        write_8bit_reg(F, CLEAR_BIT(CARRY_BIT, read_8bit_reg(F)));
+    }
+}
+
+/*
+ * Rotate right circular accumulator instruction
+ * Rotate bits in accumulator right, from LSB to MSB
+ */
+void rrca() {
+    uint8_t source_val = read_8bit_reg(A);
+    uint8_t carry_flag_new = source_val & 0x01 ? 1 : 0;
+    uint8_t new_msb = source_val & 0x01;
+    uint8_t new_val = (source_val >> 1);
+    new_val |= new_msb << 8;
+    write_8bit_reg(A, new_val);
+
+    set_zero_flag((uint32_t) new_val);
+    write_8bit_reg(F, CLEAR_BIT(NEGATIVE_BIT, read_8bit_reg(F)));
+    write_8bit_reg(F, CLEAR_BIT(HALF_CARRY_BIT, read_8bit_reg(F)));
+    if (carry_flag_new) {
+        write_8bit_reg(F, SET_BIT(CARRY_BIT, read_8bit_reg(F)));
+    }
+    else {
+        write_8bit_reg(F, CLEAR_BIT(CARRY_BIT, read_8bit_reg(F)));
+    }
+}
+
+/*
+ * Shift Left Arithmetically
+ * Shift bits in SOURCE_REG left arithmetically
+ * Source reg is either 8-bit reg or byte pointed to by HL, indicated by REG_8BIT
+ */
+void sla(uint8_t source_reg, bool reg_8bit) {
+    uint8_t source_val = reg_8bit ? read_8bit_reg(source_reg) : MEMORY[REGS[HL]];
+    uint8_t carry_flag_new = source_val & 0x80 ? 1 : 0;
+    uint8_t new_val = source_val << 1;
+    reg_8bit ? write_8bit_reg(source_reg, new_val) : (MEMORY[REGS[HL]] = new_val);
+
+    set_zero_flag((uint32_t) new_val);
+    write_8bit_reg(F, CLEAR_BIT(NEGATIVE_BIT, read_8bit_reg(F)));
+    write_8bit_reg(F, CLEAR_BIT(HALF_CARRY_BIT, read_8bit_reg(F)));
+    if (carry_flag_new) {
+        write_8bit_reg(F, SET_BIT(CARRY_BIT, read_8bit_reg(F)));
+    }
+    else {
+        write_8bit_reg(F, CLEAR_BIT(CARRY_BIT, read_8bit_reg(F)));
+    }
+}
+
+/*
+ * Source Right Arithmetically
+ * Shift bits in SOURCE_REG right arithmetically
+ * Source reg is either 8-bit reg or byte pointed to by HL, indicated by REG_8BIT
+ */
+void sra(uint8_t source_reg, bool reg_8bit) {
+    uint8_t source_val = reg_8bit ? read_8bit_reg(source_reg) : MEMORY[REGS[HL]];
+    uint8_t carry_flag_new = source_val & 0x01 ? 1 : 0;
+    uint8_t new_msb = source_val & 0x80;
+    uint8_t new_val = source_val >> 1;
+    new_val |= new_msb;
+    reg_8bit ? write_8bit_reg(source_reg, new_val) : (MEMORY[REGS[HL]] = new_val);
+
+    set_zero_flag((uint32_t) new_val);
+    write_8bit_reg(F, CLEAR_BIT(NEGATIVE_BIT, read_8bit_reg(F)));
+    write_8bit_reg(F, CLEAR_BIT(HALF_CARRY_BIT, read_8bit_reg(F)));
+    if (carry_flag_new) {
+        write_8bit_reg(F, SET_BIT(CARRY_BIT, read_8bit_reg(F)));
+    }
+    else {
+        write_8bit_reg(F, CLEAR_BIT(CARRY_BIT, read_8bit_reg(F)));
+    }
+}
+
+/*
+ * Source Right Logically
+ * Shift bits in SOURCE_REG right logically
+ * Source reg is either 8-bit reg or byte pointed to by HL, indicated by REG_8BIT
+ */
+void srl(uint8_t source_reg, bool reg_8bit) {
+    uint8_t source_val = reg_8bit ? read_8bit_reg(source_reg) : MEMORY[REGS[HL]];
+    uint8_t carry_flag_new = source_val & 0x01 ? 1 : 0;
+    uint8_t new_val = source_val >> 1;
+    new_val &= 0xEF;
+    reg_8bit ? write_8bit_reg(source_reg, new_val) : (MEMORY[REGS[HL]] = new_val);
+
+    set_zero_flag((uint32_t) new_val);
+    write_8bit_reg(F, CLEAR_BIT(NEGATIVE_BIT, read_8bit_reg(F)));
+    write_8bit_reg(F, CLEAR_BIT(HALF_CARRY_BIT, read_8bit_reg(F)));
+    if (carry_flag_new) {
+        write_8bit_reg(F, SET_BIT(CARRY_BIT, read_8bit_reg(F)));
+    }
+    else {
+        write_8bit_reg(F, CLEAR_BIT(CARRY_BIT, read_8bit_reg(F)));
+    }
+}
+
+/*
+ * Swap Instruction
+ * Swap the upper 4 bits and the lower 4 bits in SOURCE_REG
+ * Source reg is either 8-bit reg or byte pointed to by HL, indicated by REG_8BIT
+*/
+void swap(uint8_t source_reg, bool reg_8bit) {
+    uint8_t source_val = reg_8bit ? read_8bit_reg(source_reg) : MEMORY[REGS[HL]];
+    uint8_t new_val = ((source_val & 0x0F) << 4) | ((source_val & 0xF0) >> 4);
+    reg_8bit ? write_8bit_reg(source_reg, new_val) : (MEMORY[REGS[HL]] = new_val);
+
+    set_zero_flag((uint32_t) new_val);
+    write_8bit_reg(F, CLEAR_BIT(NEGATIVE_BIT, read_8bit_reg(F)));
+    write_8bit_reg(F, CLEAR_BIT(HALF_CARRY_BIT, read_8bit_reg(F)));
+    write_8bit_reg(F, CLEAR_BIT(ZERO_BIT, read_8bit_reg(F)));
 }

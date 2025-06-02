@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <stdbool.h>
 #include "cpu.h"
 
 #define PREFIX 0xCB
@@ -11,7 +12,7 @@
 static void relative_jumps(uint8_t opcode);
 static void load_immediate_add_16bit(uint8_t opcode);
 static void indirect_loading(uint8_t opcode);
-static void inc_dec_16bit(uint8_t opcode);
+static void inc_or_dec(uint8_t opcode);
 static void ld_8bit(uint8_t opcode);
 static void ops_on_accumulator(uint8_t opcode);
 static void ld_or_halt(uint8_t opcode);
@@ -35,13 +36,15 @@ static uint8_t REGISTER_PAIRS2_DT[] = {BC, DE, HL, AF};
 
 typedef void (*opcode_func)(uint8_t);
 static opcode_func decode_lookup[5][8] = {
-        {relative_jumps, load_immediate_add_16bit, indirect_loading, inc_dec_16bit, inc,  dec,           ld_8bit, ops_on_accumulator},
+        {relative_jumps, load_immediate_add_16bit, indirect_loading, inc_or_dec, inc_or_dec,  inc_or_dec,           ld_8bit, ops_on_accumulator},
         {ld_or_halt, nop, nop, nop, nop,                                                  nop,           nop,     nop},
         {alu, nop, nop, nop, nop,                                                         nop,           nop,     nop},
         {mem_mapped_ops, pop_various, conditional_jumps, assorted_ops, conditional_calls, push_call_nop, alu,     rst},
         {cb_prefixed_ops, nop, nop, nop, nop,                                             nop,           nop,     nop}
 };
 
+typedef void (*rot_shift_func)(uint8_t, bool);
+static rot_shift_func rotation_shift_ops[8] = {rlc, rrc, rl ,rr, sla, sra, swap, srl};
 /*
  * Gets indexes for decode lookup table using OPCODE and jumps to that function
  * Algorithm described in "DECODING Gameboy Z80 OPCODES" by Scott Mansell
@@ -133,9 +136,23 @@ static void indirect_loading(uint8_t opcode) {
     }
 }
 
-static void inc_dec_16bit(uint8_t opcode) {
-    uint8_t bits_four_five = GET_BITS_FOUR_FIVE(opcode);
-    bits_four_five ? inc(opcode) : dec(opcode);
+static void inc_or_dec(uint8_t opcode) {
+    uint8_t third_octal_dig = GET_THIRD_OCTAL_DIGIT(opcode);
+    uint8_t operand;
+    //operand is 16 bit register
+    if (third_octal_dig == 3) {
+        uint8_t bit_three = GET_BIT_THREE(opcode);
+        uint8_t bits_four_five = GET_BITS_FOUR_FIVE(opcode);
+        operand = REGISTER_PAIRS_DT[bits_four_five];
+        bit_three ? inc(operand, REG_16BIT) : dec(operand,REG_16BIT);
+    }
+    //operand is 8 bit register or byte pointed to by HL
+    else {
+        uint8_t second_octal_dig = GET_SECOND_OCTAL_DIGIT(opcode);
+        uint8_t operand_type = second_octal_dig == 6 ? REG_POINTER : REG_8BIT;
+        operand = REGISTERS_DT[second_octal_dig];
+        third_octal_dig == 4 ? inc(operand, operand_type) : dec(operand, operand_type);
+    }
 }
 
 static void ld_8bit(uint8_t opcode) {
@@ -322,19 +339,24 @@ static void push_call_nop(uint8_t opcode) {
 }
 
 static void cb_prefixed_ops(uint8_t opcode) {
+    opcode = fetch_byte();
     uint8_t first_octal_dig = GET_FIRST_OCTAL_DIGIT(opcode);
+    uint8_t bit_num = GET_SECOND_OCTAL_DIGIT(opcode);
+    uint8_t reg = GET_THIRD_OCTAL_DIGIT(opcode);
+    bool reg_8bit = reg == 6;
     switch (first_octal_dig) {
         case 0:
-            rot();
+            //TODO change "bit_num" to something that makes more sense?
+            rotation_shift_ops[bit_num](REGISTERS_DT[reg], reg_8bit);
             break;
         case 1:
-            bit();
+            bit(bit_num, REGISTERS_DT[reg], reg_8bit);
             break;
         case 2:
-            res();
+            res(bit_num, REGISTERS_DT[reg], reg_8bit);
             break;
         case 3:
-            set();
+            set(bit_num, REGISTERS_DT[reg], reg_8bit);
             break;
     }
 }

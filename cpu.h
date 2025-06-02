@@ -9,12 +9,20 @@ void nop(uint8_t opcode);
 void stop();
 void ld(uint16_t dest, uint16_t source, uint8_t dest_type, uint8_t source_type);
 void jr();
-void inc(uint8_t opcode);
-void dec(uint8_t opcode);
-void rlca();
-void rrca();
+void inc(uint8_t operand, uint8_t operand_type);
+void dec(uint8_t operand, uint8_t operand_type);
+void rl(uint8_t source_reg, bool reg_8bit);
 void rla();
+void rlc(uint8_t source_reg, bool reg_8bit);
+void rlca();
+void rr(uint8_t source_reg, bool reg_8bit);
 void rra();
+void rrc(uint8_t source_reg, bool reg_8bit);
+void rrca();
+void sla(uint8_t source_reg, bool reg_8bit);
+void sra(uint8_t source_reg, bool reg_8bit);
+void swap(uint8_t source_reg, bool reg_8bit);
+void srl(uint8_t source_reg, bool reg_8bit);
 void daa();
 void cpl();
 void scf();
@@ -38,9 +46,9 @@ void call();
 void push();
 void rst(uint8_t opcode);
 void rot();
-void bit();
-void res();
-void set();
+void bit(uint8_t bit, uint8_t source_reg, bool reg_8bit);
+void res(uint8_t bit, uint8_t source_reg, bool reg_8bit);
+void set(uint8_t bit, uint8_t source_reg, bool reg_8bit);
 
 enum REGISTERS_16BIT {
     AF,
