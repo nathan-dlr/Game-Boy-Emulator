@@ -8,7 +8,6 @@ uint16_t fetch_word();
 void nop(uint8_t opcode);
 void stop();
 void ld(uint16_t dest, uint16_t source, uint8_t dest_type, uint8_t source_type);
-void jr();
 void inc(uint8_t operand, uint8_t operand_type);
 void dec(uint8_t operand, uint8_t operand_type);
 void rl(uint8_t source_reg, bool reg_8bit);
@@ -36,16 +35,16 @@ void cp(uint8_t operand, uint8_t operand_type);
 void and(uint8_t operand, uint8_t operand_type);
 void xor(uint8_t operand, uint8_t operand_type);
 void or(uint8_t operand, uint8_t operand_type);
-void ret();
-void pop();
+void call(uint8_t cc, uint16_t const_16);
+void jp(uint8_t cc, bool is_hl);
+void jr(uint8_t cc);
+void ret(uint8_t cc);
 void reti();
-void jp();
 void di();
 void ei();
-void call();
-void push();
+void pop(uint8_t reg_16);
+void push(uint8_t reg_16);
 void rst(uint8_t opcode);
-void rot();
 void bit(uint8_t bit, uint8_t source_reg, bool reg_8bit);
 void res(uint8_t bit, uint8_t source_reg, bool reg_8bit);
 void set(uint8_t bit, uint8_t source_reg, bool reg_8bit);
@@ -81,11 +80,11 @@ enum OPERAND_FORMAT {
     REG_OFFSET,
 };
 
-enum SUBTRACTION_TYPE {
-    SUB,
-    SBC,
-    CP
+enum CC {
+    NZ,
+    Z,
+    NC,
+    CARRY,
+    NONE
 };
-
-enum LOGIC_TYPE
 #endif //GB_EMU_CPU_H

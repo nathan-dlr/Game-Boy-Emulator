@@ -30,17 +30,18 @@ static void cb_prefixed_ops(uint8_t opcode);
  * These tables aid in decoding instructions as outlined in "DECODING Gameboy Z80 OPCODES" by Scott Mansell
  * These tables DO NOT directly access any registers
  */
-static uint8_t REGISTERS_DT[] = {B, C, D, E, H, L, HL, A};
-static uint8_t REGISTER_PAIRS_DT[] = {BC, DE, HL, SP};
-static uint8_t REGISTER_PAIRS2_DT[] = {BC, DE, HL, AF};
+static uint8_t REGISTERS_DT[8] = {B, C, D, E, H, L, HL, A};
+static uint8_t REGISTER_PAIRS_DT[4] = {BC, DE, HL, SP};
+static uint8_t REGISTER_PAIRS2_DT[4] = {BC, DE, HL, AF};
+static uint8_t CC[4] = {NZ, Z, NC, CARRY};
 
 typedef void (*opcode_func)(uint8_t);
 static opcode_func decode_lookup[5][8] = {
-        {relative_jumps, load_immediate_add_16bit, indirect_loading, inc_or_dec, inc_or_dec,  inc_or_dec,           ld_8bit, ops_on_accumulator},
-        {ld_or_halt, nop, nop, nop, nop,                                                  nop,           nop,     nop},
-        {alu, nop, nop, nop, nop,                                                         nop,           nop,     nop},
-        {mem_mapped_ops, pop_various, conditional_jumps, assorted_ops, conditional_calls, push_call_nop, alu,     rst},
-        {cb_prefixed_ops, nop, nop, nop, nop,                                             nop,           nop,     nop}
+        {relative_jumps,load_immediate_add_16bit,indirect_loading,inc_or_dec,inc_or_dec,inc_or_dec,ld_8bit,ops_on_accumulator},
+        {ld_or_halt,nop,nop,nop,nop,nop,nop,nop},
+        {alu,nop,nop,nop,nop,nop,nop,nop},
+        {mem_mapped_ops, pop_various, conditional_jumps,assorted_ops, conditional_calls, push_call_nop, alu,     rst},
+        {cb_prefixed_ops,nop,nop,nop,nop,nop,nop,nop}
 };
 
 typedef void (*rot_shift_func)(uint8_t, bool);
@@ -95,10 +96,10 @@ static void relative_jumps(uint8_t opcode) {
             ld(fetch_word(), SP, POINTER, REG_16BIT);
             break;
         case 3:
-            jr();
+            jr(NONE);
             break;
         defualt:
-            jr();
+            jr(CC[second_octal_dig - 4]);
             break;
     }
 }
@@ -106,11 +107,9 @@ static void relative_jumps(uint8_t opcode) {
 static void load_immediate_add_16bit(uint8_t opcode) {
     uint8_t bit_three = GET_BIT_THREE(opcode);
     uint8_t bits_four_five = GET_BITS_FOUR_FIVE(opcode);
-    //TODO figure out which add this is
     bit_three ? add(HL, REGISTER_PAIRS_DT[bits_four_five]) : ld(REGISTER_PAIRS_DT[bits_four_five], fetch_word(), REG_16BIT, CONST_16BIT);
 }
 
-//TODO adjust parameters once ld is written
 static void indirect_loading(uint8_t opcode) {
     uint8_t bit_three = GET_BIT_THREE(opcode);
     uint8_t bits_four_five = GET_BITS_FOUR_FIVE(opcode);
@@ -268,17 +267,17 @@ static void pop_various(uint8_t opcode) {
     uint8_t bit_three = GET_BIT_THREE(opcode);
     uint8_t bits_four_five = GET_BITS_FOUR_FIVE(opcode);
     if (!bit_three) {
-        pop();
+        pop(REGISTER_PAIRS2_DT[bits_four_five]);
     }
     switch (bits_four_five) {
         case 0:
-            ret();
+            ret(NONE);
             break;
         case 1:
             reti();
             break;
         case 2:
-            jp();
+            jp(NONE, true);
         case 3:
             ld(SP, HL, REG_16BIT, REG_16BIT);
     }
@@ -288,7 +287,7 @@ static void conditional_jumps(uint8_t opcode) {
     uint8_t second_octal_dig = GET_SECOND_OCTAL_DIGIT(opcode);
     switch (second_octal_dig) {
         default:
-            jp();
+            jp(CC[second_octal_dig], false);
             break;
         case 4:
             ld(C, A, REG_OFFSET, REG_8BIT);
@@ -309,7 +308,7 @@ static void assorted_ops(uint8_t opcode) {
     uint8_t second_octal_dig = GET_SECOND_OCTAL_DIGIT(opcode);
     switch (second_octal_dig) {
         case 0:
-            jp();
+            jp(NONE, false);
             break;
         case 6:
             di();
@@ -326,16 +325,16 @@ static void assorted_ops(uint8_t opcode) {
 static void conditional_calls(uint8_t opcode) {
     uint8_t second_octal_dig = GET_SECOND_OCTAL_DIGIT(opcode);
     //instructions whose opcode's second octal digit are 4-7 are usually implemented in the Z80 but not on the gbz80
-    second_octal_dig < 3 ? call() : nop(opcode);
+    second_octal_dig < 3 ? call(CC[second_octal_dig], fetch_word()) : nop(opcode);
 }
 
 static void push_call_nop(uint8_t opcode) {
     uint8_t bit_three = GET_BIT_THREE(opcode);
     uint8_t bits_four_five = GET_BITS_FOUR_FIVE(opcode);
     if (!bit_three) {
-        push();
+        push(REGISTER_PAIRS2_DT[bits_four_five]);
     }
-    bits_four_five == 0 ? call() : nop(opcode);
+    bits_four_five == 0 ? call(NONE, fetch_word()) : nop(opcode);
 }
 
 static void cb_prefixed_ops(uint8_t opcode) {
