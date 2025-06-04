@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include "gb.h"
 #include "cpu.h"
 #include "decode.h"
@@ -16,8 +17,16 @@
 #define BYTE 1
 #define WORD 2
 #define FIRST_NIBBLE(x) (x & 0x000F)
+
+/* Interrupt Enable and Interrupt Flag */
+#define IE = 0xFFFF
+#define IF = 0xFF0F
+
 /* REGISTERS */
 static uint16_t REGS[6];
+
+/* Interrupt Master Enable Flag */
+static bool IME;
 
 
 
@@ -31,6 +40,12 @@ void cpu_init() {
     decode_init();
 }
 
+void execute_next_instruction() {
+    uint8_t next_byte = fetch_byte();
+    decode(next_byte);
+}
+
+///////////////////////////////////////// GENERAL HELPER FUNCTIONS /////////////////////////////////////////
 
 static void write_8bit_reg(uint8_t reg, uint8_t val) {
     uint8_t index;
@@ -53,12 +68,6 @@ uint8_t read_8bit_reg(uint8_t reg) {
     }
 }
 
-//TODO Change function name
-void cpu() {
-    uint8_t next_byte = fetch_byte();
-    decode(next_byte);
-}
-
 /*
  * Returns byte pointed to by PC
 */
@@ -77,9 +86,32 @@ uint16_t fetch_word() {
     return word;
 }
 
+/*
+ * Helper function for 8bit arethmetic instructions
+ * Returns value held by OPERAND of OPERAND_TYPE
+*/
+static uint8_t get_8bit_operand(uint8_t operand, uint8_t operand_type) {
+    uint8_t source_val = 0;
+    switch (operand_type) {
+        case REG_8BIT:
+            source_val = read_8bit_reg(operand);
+            break;
+        case CONST_8BIT:
+            source_val = operand;
+            break;
+        case REG_POINTER:
+            source_val = MEMORY[REGS[HL]];
+            break;
+        default:
+            perror("Invalid operand in get_8bit_operand function");
+            break;
+    }
+    return source_val;
+}
 
-/////////////////////////////////////////* FLAG SETTERS */////////////////////////////////////////
-//TODO can we reduce from uint32?
+
+///////////////////////////////////////// FLAG SETTERS /////////////////////////////////////////
+
 /*
  * Sets zero flag if RESULT is zero, otherwise clears zero flag
 */
@@ -154,31 +186,11 @@ static void set_rot_flags(uint8_t result, bool set_zero, uint8_t carry_flag_new)
     write_8bit_reg(F, CLEAR_BIT(HALF_CARRY_BIT, read_8bit_reg(F)));
 }
 
-/*
- * Returns value held by OPERAND of OPERAND_TYPE
-*/
-uint8_t get_8bit_operand(uint8_t operand, uint8_t operand_type) {
-    uint8_t source_val = 0;
-
-    switch (operand_type) {
-        case REG_8BIT:
-            source_val = read_8bit_reg(operand);
-            break;
-        case CONST_8BIT:
-            source_val = operand;
-            break;
-        case REG_POINTER:
-            source_val = MEMORY[REGS[HL]];
-            break;
-    }
-    return source_val;
-}
 
 /*
  * Loads SOURCE into DEST
  * Operand types are describes by DEST_TYPE and SOURCE_TYPE
 */
-//TODO LD HL SP+e8 SETS FLAGS MIGHT BE ABLE TO USE ADDITION FLAGS FUNC
 void ld(uint16_t dest, uint16_t source, uint8_t dest_type, uint8_t source_type) {
     uint8_t source_val = 0;
     switch (source_type) {
@@ -224,13 +236,38 @@ void ld(uint16_t dest, uint16_t source, uint8_t dest_type, uint8_t source_type) 
         case REG_OFFSET:
             MEMORY[0xFF00 + REGS[dest]] = source_val;
             break;
-        //const
         default:
-        //TODO ERROR HANDLING
+            perror("Invalid operand in load");
     }
 }
 
-/////////////////////////////////////////* ARITHMETIC INSTRUCTIONS  */////////////////////////////////////////
+void ld_inc(uint8_t action) {
+    switch(action) {
+        case DEST_INC:
+            MEMORY[REGS[HL]++] = read_8bit_reg(A);
+            return;
+        case DEST_DEC:
+            MEMORY[REGS[HL]--] = read_8bit_reg(A);
+            return;
+        case SOURCE_INC:
+            write_8bit_reg(A, REGS[HL]);
+            REGS[HL]++;
+            return;
+        case SOURCE_DEC:
+            write_8bit_reg(A, REGS[HL]);
+            REGS[HL]--;
+            return;
+        default:
+            perror("Invalid action in LD_INC");
+    }
+}
+
+void ld_sp_off(int8_t offset) {
+    REGS[HL] = REGS[SP] + offset;
+    set_addition_flags(REGS[HL], WORD);
+}
+
+///////////////////////////////////////// ARITHMETIC INSTRUCTIONS  /////////////////////////////////////////
 
 /*
  * Add Instruction
@@ -271,6 +308,8 @@ void add(uint16_t operand, uint8_t operand_type) {
             REGS[SP] = result;
             set_addition_flags(result, BYTE);
             break;
+        default:
+            perror("Invalid operand in add");
     }
 }
 
@@ -344,6 +383,8 @@ void inc(uint8_t operand, uint8_t operand_type) {
             result = MEMORY[REGS[operand]] + 1;
             MEMORY[REGS[operand]] = result;
             break;
+        default:
+            perror("Invalid Operand in INC");
     }
     if (result > 0x000F) {
         write_8bit_reg(F, SET_BIT(HALF_CARRY_BIT, read_8bit_reg(A)));
@@ -363,7 +404,7 @@ void inc(uint8_t operand, uint8_t operand_type) {
  */
 void dec(uint8_t operand, uint8_t operand_type) {
     uint8_t result;
-    uint16_t source_val;
+    uint16_t source_val ;
     switch (operand_type) {
         case REG_8BIT:
             source_val = read_8bit_reg(operand);
@@ -378,6 +419,10 @@ void dec(uint8_t operand, uint8_t operand_type) {
             result = source_val - 1;
             MEMORY[REGS[operand]] = result;
             break;
+        default:
+            result = 0;
+            source_val = 0;
+            perror("Invalid operand in DEC");
     }
     //Borrow from bit four
     if (FIRST_NIBBLE(source_val) == 0) {
@@ -390,7 +435,7 @@ void dec(uint8_t operand, uint8_t operand_type) {
     write_8bit_reg(F, SET_BIT(NEGATIVE_BIT, read_8bit_reg(A)));
 }
 
-/////////////////////////////////////////* LOGIC INSTRUCTIONS */////////////////////////////////////////
+///////////////////////////////////////// LOGIC INSTRUCTIONS /////////////////////////////////////////
 
 /*
  * Bitwise AND instruction
@@ -453,7 +498,7 @@ void cpl() {
     write_8bit_reg(F, SET_BIT(NEGATIVE_BIT | HALF_CARRY_BIT, read_8bit_reg(F)));
 }
 
-/////////////////////////////////////////* BIT FLAG INSTRUCTIONS */////////////////////////////////////////
+///////////////////////////////////////// BIT FLAG INSTRUCTIONS /////////////////////////////////////////
 
 /*
  * Bit instruction
@@ -500,7 +545,7 @@ void set(uint8_t bit, uint8_t source_reg, bool reg_8bit) {
     }
 }
 
-/////////////////////////////////////////* BIT SHIFT INSTRUCTIONS */////////////////////////////////////////
+///////////////////////////////////////// BIT SHIFT INSTRUCTIONS /////////////////////////////////////////
 
 /*
  * Rotate left instruction
@@ -683,29 +728,35 @@ void swap(uint8_t source_reg, bool reg_8bit) {
     write_8bit_reg(F, CLEAR_BIT(ZERO_BIT, read_8bit_reg(F)));
 }
 
-/////////////////////////////////////////* JUMPS AND SUBROUTINE INSTRUCTIONS */////////////////////////////////////////
+///////////////////////////////////////// JUMPS AND SUBROUTINE INSTRUCTIONS /////////////////////////////////////////
 
-void call(uint8_t cc, uint16_t const_16) {
-    bool condition;
+/*
+ * Helper function for jumps and subroutines that evaluates if given condition codes match with those in flag register
+ * Returns true if condition codes match, false otherwise
+ */
+static bool evaluate_condition_codes(uint8_t cc) {
     uint8_t flags = read_8bit_reg(F);
     switch (cc) {
         case NZ:
-            condition = (flags & (NEGATIVE_BIT | ZERO_BIT)) == (NEGATIVE_BIT | ZERO_BIT);
-            break;
+            return (flags & (NEGATIVE_BIT | ZERO_BIT)) == (NEGATIVE_BIT | ZERO_BIT);
         case Z:
-            condition = (flags & ZERO_BIT) == ZERO_BIT;
-            break;
+            return (flags & ZERO_BIT) == ZERO_BIT;
         case NC:
-            condition = (flags & (NEGATIVE_BIT | CARRY_BIT)) == (NEGATIVE_BIT | CARRY_BIT);
-            break;
+            return (flags & (NEGATIVE_BIT | CARRY_BIT)) == (NEGATIVE_BIT | CARRY_BIT);
         case CARRY:
-            condition = (flags & CARRY) == CARRY_BIT;
-            break;
+            return (flags & CARRY) == CARRY_BIT;
         default:
-            condition = true;
-            break;
+            return true;
     }
-    if (!condition) {
+}
+/*
+ * Call Instruction
+ * Pushes the address of the instruction after the call on the stack, such that RET can pop it later;
+ * then it executes an implicit JP using the address pointed to by COSNT_16
+ * Only executes if CC is met
+ */
+void call(uint8_t cc, uint16_t const_16) {
+    if (!evaluate_condition_codes(cc)) {
         return;
     }
     MEMORY[REGS[SP]] = PC + 2;
@@ -713,81 +764,42 @@ void call(uint8_t cc, uint16_t const_16) {
     REGS[PC] = const_16;
 }
 
+/*
+ * Jump Instruction
+ * Jumps to address pointed to by either the next word or by the contents of HL, indicated by IS_HL, if CC is met
+ */
 void jp(uint8_t cc, bool is_hl) {
-    bool condition;
-    uint8_t flags = read_8bit_reg(F);
-    switch (cc) {
-        case NZ:
-            condition = (flags & (NEGATIVE_BIT | ZERO_BIT)) == (NEGATIVE_BIT | ZERO_BIT);
-            break;
-        case Z:
-            condition = (flags & ZERO_BIT) == ZERO_BIT;
-            break;
-        case NC:
-            condition = (flags & (NEGATIVE_BIT | CARRY_BIT)) == (NEGATIVE_BIT | CARRY_BIT);
-            break;
-        case CARRY:
-            condition = (flags & CARRY) == CARRY_BIT;
-            break;
-        default:
-            condition = true;
-            break;
+    uint16_t address;
+    if (is_hl) {
+        address = REGS[HL];
     }
-    if (!condition) {
-        return;
+    else {
+        address = fetch_byte();
+        if (!evaluate_condition_codes(cc)) {
+            return;
+        }
     }
-    uint16_t address = is_hl ? REGS[HL] : fetch_word();
     REGS[PC] = address;
 }
 
+/*
+ * Relative Jump Instruction
+ * Jumps to some relative offset if CC is met
+ */
 void jr(uint8_t cc) {
-    bool condition;
-    uint8_t flags = read_8bit_reg(F);
-    switch (cc) {
-        case NZ:
-            condition = (flags & (NEGATIVE_BIT | ZERO_BIT)) == (NEGATIVE_BIT | ZERO_BIT);
-            break;
-        case Z:
-            condition = (flags & ZERO_BIT) == ZERO_BIT;
-            break;
-        case NC:
-            condition = (flags & (NEGATIVE_BIT | CARRY_BIT)) == (NEGATIVE_BIT | CARRY_BIT);
-            break;
-        case CARRY:
-            condition = (flags & CARRY) == CARRY_BIT;
-            break;
-        default:
-            condition = true;
-            break;
-    }
-    if (!condition) {
+    if (!evaluate_condition_codes(cc)) {
         return;
     }
     int8_t offset = (int8_t) fetch_byte();
     REGS[PC] = REGS[PC] + 2 + offset;
 }
 
+/*
+ * Return from subroutine
+ * Pops the PC from the stack if cc is met
+ */
 void ret(uint8_t cc) {
-    bool condition;
-    uint8_t flags = read_8bit_reg(F);
-    switch (cc) {
-        case NZ:
-            condition = (flags & (NEGATIVE_BIT | ZERO_BIT)) == (NEGATIVE_BIT | ZERO_BIT);
-            break;
-        case Z:
-            condition = (flags & ZERO_BIT) == ZERO_BIT;
-            break;
-        case NC:
-            condition = (flags & (NEGATIVE_BIT | CARRY_BIT)) == (NEGATIVE_BIT | CARRY_BIT);
-            break;
-        case CARRY:
-            condition = (flags & CARRY) == CARRY_BIT;
-            break;
-        default:
-            condition = true;
-            break;
-    }
-    if (!condition) {
+    if (!evaluate_condition_codes(cc)) {
         return;
     }
     REGS[PC] = REGS[PC] & MEMORY[REGS[SP]++];
@@ -795,31 +807,129 @@ void ret(uint8_t cc) {
 
 }
 
-//TODO RETI
-//TODO RST
+/*
+ * Return from subroutine and enable interrupts
+ */
+void reti() {
+    IME = true;
+    REGS[PC] = REGS[PC] & MEMORY[REGS[SP]++];
+    REGS[PC] = REGS[PC] & (MEMORY[REGS[SP]++] << 4);
+}
 
-/////////////////////////////////////////* CARRY FLAG INSTRUCTIONS */////////////////////////////////////////
+/*
+ * Call address VEC
+ */
+void rst(uint8_t opcode) {
+    uint8_t vec = (opcode & 0x38 >> 3) * 8;
+    MEMORY[REGS[SP]] = PC + 2;
+    REGS[SP] += 2;
+    REGS[PC] = vec;
 
+}
+
+///////////////////////////////////////// CARRY FLAG INSTRUCTIONS /////////////////////////////////////////
+
+/*
+ * Complement Carry Flag
+ */
 void ccf() {
     write_8bit_reg(F, read_8bit_reg(F) ^ CARRY_BIT);
     write_8bit_reg(F, CLEAR_BIT(NEGATIVE_BIT, read_8bit_reg(F)));
     write_8bit_reg(F, CLEAR_BIT(HALF_CARRY_BIT, read_8bit_reg(F)));
 }
 
+/*
+ * Set Carry Flag
+ */
 void scf() {
     write_8bit_reg(F, SET_BIT(CARRY_BIT, read_8bit_reg(F)));
     write_8bit_reg(F, CLEAR_BIT(NEGATIVE_BIT, read_8bit_reg(F)));
     write_8bit_reg(F, CLEAR_BIT(HALF_CARRY_BIT, read_8bit_reg(F)));
 }
 
-/////////////////////////////////////////* STACK MANIPULATION */////////////////////////////////////////
+///////////////////////////////////////// STACK MANIPULATION /////////////////////////////////////////
 
+/*
+ * Pop Instruction
+ * Pop register whose index is indicated by REG_16 from the stack
+ */
 void pop(uint8_t reg_16) {
     REGS[reg_16] = REGS[reg_16] & MEMORY[REGS[SP]++];
     REGS[reg_16] = REGS[reg_16] & (MEMORY[REGS[SP]++] << 4);
 }
 
+/*
+ * Push Instruction
+ * Push register whose index is indicated by REG_16 from the stack
+ */
 void push(uint8_t reg_16) {
     MEMORY[--REGS[SP]] = (uint8_t) ((REGS[reg_16] & 0xF0) >> 4);
-    MEMORY[--REGS[SP]] = (uint8_t) (REGS[reg_16] & 0x0F);4
+    MEMORY[--REGS[SP]] = (uint8_t) (REGS[reg_16] & 0x0F);
+}
+
+///////////////////////////////////////// INTERRUPT-RELATED INSTRUCTIONS /////////////////////////////////////////
+
+/*
+ * Disable Interrupts
+*/
+void di() {
+    IME = false;
+}
+
+/*
+ * Enable Interrupts
+*/
+void ei() {
+    IME = true;
+}
+
+/*
+ * Halt
+ */
+void halt() {
+    //TODO
+}
+
+///////////////////////////////////////// MISC. INSTRUCTIONS /////////////////////////////////////////
+
+void daa() {
+    uint8_t adjustment = 0;
+    uint8_t flags = read_8bit_reg(F);
+    if (SUBTRACTION_FLAG(flags)) {
+        if (HALF_CARRY_FLAG(flags)) {
+            adjustment += 6;
+        }
+        if (CARRY_FLAG(flags)) {
+            adjustment += 60;
+        }
+        REGS[A] -= adjustment;
+    }
+    else {
+        if (HALF_CARRY_FLAG(flags) || (REGS[A] & 0xF > 9)) {
+            adjustment += 6;
+        }
+        if (CARRY_FLAG(flags) || (REGS[A] > 0x99)) {
+            adjustment += 60;
+
+        }
+        REGS[A] += adjustment;
+    }
+    if (REGS[A] > 0x99) {
+        write_8bit_reg(F, SET_BIT(CARRY_BIT, flags));
+    }
+    else {
+        set_zero_flag(REGS[A]);
+    }
+}
+
+/*
+ * No Operation
+ * Do nothing
+ */
+void nop([[maybe_unused]] uint8_t opcode) {
+    REGS[A] += 0;
+}
+
+void stop() {
+    //enter low power mode
 }

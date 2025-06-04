@@ -8,6 +8,8 @@ uint16_t fetch_word();
 void nop(uint8_t opcode);
 void stop();
 void ld(uint16_t dest, uint16_t source, uint8_t dest_type, uint8_t source_type);
+void ld_inc(uint8_t action);
+void ld_sp_off(int8_t offset);
 void inc(uint8_t operand, uint8_t operand_type);
 void dec(uint8_t operand, uint8_t operand_type);
 void rl(uint8_t source_reg, bool reg_8bit);
@@ -86,5 +88,12 @@ enum CC {
     NC,
     CARRY,
     NONE
+};
+
+enum ACTION {
+    DEST_INC,
+    DEST_DEC,
+    SOURCE_INC,
+    SOURCE_DEC
 };
 #endif //GB_EMU_CPU_H

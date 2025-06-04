@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include "cpu.h"
 
 #define PREFIX 0xCB
@@ -88,13 +89,13 @@ static void relative_jumps(uint8_t opcode) {
     switch (second_octal_dig) {
         case 0:
             nop(opcode);
-            break;
+            return;
         case 1:
             stop();
-            break;
+            return;
         case 2:
             ld(fetch_word(), SP, POINTER, REG_16BIT);
-            break;
+            return;
         case 3:
             jr(NONE);
             break;
@@ -116,22 +117,16 @@ static void indirect_loading(uint8_t opcode) {
     switch (bits_four_five) {
         case 0:
             bit_three ? ld(A, BC, REG_8BIT, REG_16BIT) : ld(BC, A, REG_16BIT, REG_8BIT);
-            break;
+            return;
         case 1:
             bit_three ? ld(A, DE, REG_16BIT, REG_16BIT) : ld(DE, A, REG_16BIT, REG_8BIT);
-            break;
-        /* TODO COME BACK TO DECIDE HOW TO IMPLEMENT INCREMENT/DECREMENT FOR CASE 2 and 3
-         * IF IN LD WE NEED TO KNOW WHICH OPERAND TO BE INCREMENTED AND IF ITS INCREMENTED OR DECREMENTED
-         * IF WE JUST CALL INC, WE NEED TO MAKE SURE THE CYCLES ARE CORRECT
-        */
+            return;
         case 2:
-            bit_three ? ld(A, HL, REG_8BIT, REG_16BIT) : ld(HL, A, REG_16BIT, REG_8BIT);
-            inc(HL);
-            break;
+            bit_three ? ld_inc(SOURCE_INC) : ld_inc(DEST_INC);
+            return;
         case 3:
-            bit_three ? ld(A, HL, REG_8BIT, REG_16BIT) : ld(HL, A, REG_16BIT, REG_8BIT);
-            dec(HL);
-            break;
+            bit_three ? ld_inc(SOURCE_DEC) : ld_inc(DEST_DEC);
+            return;
     }
 }
 
@@ -165,28 +160,28 @@ static void ops_on_accumulator(uint8_t opcode) {
     switch (second_octal_dig) {
         case 0:
             rlca();
-            break;
+            return;
         case 1:
             rrca();
-            break;
+            return;
         case 2:
             rla();
-            break;
+            return;
         case 3:
             rra();
-            break;
+            return;
         case 4:
             daa();
-            break;
+            return;
         case 5:
             cpl();
-            break;
+            return;
         case 6:
             scf();
-            break;
+            return;
         case 7:
             ccf();
-            break;
+            return;
     }
 }
 
@@ -216,28 +211,28 @@ static void alu(uint8_t opcode) {
     switch (second_octal_dig) {
         case 0:
             add(operand, operand_type);
-            break;
+            return;
         case 1:
             adc(operand, operand_type);
-            break;
+            return;
         case 2:
             sub(operand, operand_type);
-            break;
+            return;
         case 3:
             sbc(operand, operand_type);
-            break;
+            return;
         case 4:
             and(operand, operand_type);
-            break;
+            return;
         case 5:
             xor(operand, operand_type);
-            break;
+            return;
         case 6:
             or(operand, operand_type);
-            break;
+            return;
         case 7:
             cp(operand, operand_type);
-            break;
+            return;
     }
 }
 
@@ -245,21 +240,20 @@ static void mem_mapped_ops(uint8_t opcode) {
     uint8_t second_octal_dig = GET_SECOND_OCTAL_DIGIT(opcode);
     switch (second_octal_dig) {
         default:
-            ret();
-            break;
+            ret(CC[second_octal_dig]);
+            return;
         case 4:
             ld(fetch_byte(), A, OFFSET, REG_8BIT);
-            break;
+            return;
         case 5:
             add(fetch_byte(), OFFSET);
-            break;
+            return;
         case 6:
             ld(A, fetch_byte(), REG_8BIT, OFFSET);
-            break;
+            return;
         case 7:
-            //TODO set H and C flags
-            ld(HL, SP + (int8_t)fetch_byte(), REG_8BIT, CONST_16BIT);
-            break;
+            ld_sp_off(fetch_byte());
+            return;
     }
 }
 
@@ -272,14 +266,16 @@ static void pop_various(uint8_t opcode) {
     switch (bits_four_five) {
         case 0:
             ret(NONE);
-            break;
+            return;
         case 1:
             reti();
-            break;
+            return;
         case 2:
             jp(NONE, true);
+            return;
         case 3:
             ld(SP, HL, REG_16BIT, REG_16BIT);
+            return;
     }
 }
 
@@ -288,19 +284,19 @@ static void conditional_jumps(uint8_t opcode) {
     switch (second_octal_dig) {
         default:
             jp(CC[second_octal_dig], false);
-            break;
+            return;
         case 4:
             ld(C, A, REG_OFFSET, REG_8BIT);
-            break;
+            return;
         case 5:
             ld(fetch_word(), A, POINTER, REG_8BIT);
-            break;
+            return;
         case 6:
             ld(A, C, REG_8BIT, REG_OFFSET);
-            break;
+            return;
         case 7:
             ld(A, fetch_word(), REG_8BIT, POINTER);
-            break;
+            return;
     }
 }
 
@@ -309,16 +305,17 @@ static void assorted_ops(uint8_t opcode) {
     switch (second_octal_dig) {
         case 0:
             jp(NONE, false);
-            break;
+            return;
         case 6:
             di();
-            break;
+            return;
         case 7:
             ei();
-            break;
+            return;
         //instructions whose opcode's second octal digit are 2-5 are usually implemented in the Z80 but not on the gbz80
         default:
             nop(opcode);
+            return;
     }
 }
 
@@ -347,15 +344,16 @@ static void cb_prefixed_ops(uint8_t opcode) {
         case 0:
             //TODO change "bit_num" to something that makes more sense?
             rotation_shift_ops[bit_num](REGISTERS_DT[reg], reg_8bit);
-            break;
+            return;
         case 1:
             bit(bit_num, REGISTERS_DT[reg], reg_8bit);
-            break;
+            return;
         case 2:
             res(bit_num, REGISTERS_DT[reg], reg_8bit);
-            break;
+            return;
         case 3:
             set(bit_num, REGISTERS_DT[reg], reg_8bit);
-            break;
+            return;
+
     }
 }
