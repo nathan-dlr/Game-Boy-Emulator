@@ -2,7 +2,7 @@
 #define GB_EMU_GB_H
 
 
-unsigned char* MEMORY;
+uint8_t* MEMORY;
 
 
 #endif //GB_EMU_GB_H

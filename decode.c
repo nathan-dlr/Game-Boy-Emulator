@@ -49,7 +49,7 @@ typedef void (*rot_shift_func)(uint8_t, bool);
 static rot_shift_func rotation_shift_ops[8] = {rlc, rrc, rl ,rr, sla, sra, swap, srl};
 /*
  * Gets indexes for decode lookup table using OPCODE and jumps to that function
- * Algorithm described in "DECODING Gameboy Z80 OPCODES" by Scott Mansell
+ * Algorithm described in "DECODING Game Boy Z80 OPCODES" by Scott Mansell
 */
 void decode(uint8_t opcode) {
     unsigned char first_nibble = opcode & 0xF0;
@@ -75,6 +75,8 @@ void decode(uint8_t opcode) {
         case 4:
             second_index = first_octal_dig;
             break;
+        default:
+            perror("Invalid opcode in decode");
     }
     decode_lookup[first_index][second_index](opcode);
 }
@@ -99,7 +101,7 @@ static void relative_jumps(uint8_t opcode) {
         case 3:
             jr(NONE);
             break;
-        defualt:
+        default:
             jr(CC[second_octal_dig - 4]);
             break;
     }
@@ -127,6 +129,8 @@ static void indirect_loading(uint8_t opcode) {
         case 3:
             bit_three ? ld_inc(SOURCE_DEC) : ld_inc(DEST_DEC);
             return;
+        default:
+            perror("Invalid opcode in decoding indirect loading");
     }
 }
 
@@ -182,6 +186,8 @@ static void ops_on_accumulator(uint8_t opcode) {
         case 7:
             ccf();
             return;
+        default:
+            perror("Invalid opcode in decoding ops on accumulator");
     }
 }
 
@@ -233,6 +239,8 @@ static void alu(uint8_t opcode) {
         case 7:
             cp(operand, operand_type);
             return;
+        default:
+            perror("Invalid opcode in alu decode");
     }
 }
 
@@ -276,6 +284,8 @@ static void pop_various(uint8_t opcode) {
         case 3:
             ld(SP, HL, REG_16BIT, REG_16BIT);
             return;
+        default:
+            perror("Invalid opcode in decoding pop");
     }
 }
 
@@ -354,6 +364,7 @@ static void cb_prefixed_ops(uint8_t opcode) {
         case 3:
             set(bit_num, REGISTERS_DT[reg], reg_8bit);
             return;
-
+        default:
+            perror("Invalid opcode in cb_prefixed_op");
     }
 }

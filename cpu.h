@@ -4,6 +4,7 @@
 void cpu_init();
 uint8_t fetch_byte();
 uint16_t fetch_word();
+void execute_next_instruction();
 
 void nop(uint8_t opcode);
 void stop();
@@ -95,5 +96,10 @@ enum ACTION {
     DEST_DEC,
     SOURCE_INC,
     SOURCE_DEC
+};
+
+enum CPU_STATES {
+    RUNNING,
+    HALTED
 };
 #endif //GB_EMU_CPU_H

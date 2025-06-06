@@ -14,19 +14,20 @@
 #define CARRY_BIT 0x10
 #define SET_BIT(bit, value) (bit | value)
 #define CLEAR_BIT(bit, value) (~bit | value)
-#define BYTE 1
-#define WORD 2
+#define BYTE 0
+#define WORD 1
 #define FIRST_NIBBLE(x) (x & 0x000F)
 
 /* Interrupt Enable and Interrupt Flag */
-#define IE = 0xFFFF
-#define IF = 0xFF0F
+#define IE 0xFFFF
+#define IF 0xFF0F
 
 /* REGISTERS */
 static uint16_t REGS[6];
 
 /* Interrupt Master Enable Flag */
-static bool IME;
+static bool IME = false;
+static uint8_t CPU_STATE;
 
 
 
@@ -37,7 +38,7 @@ void cpu_init() {
     REGS[HL] = 0x8403;
     REGS[SP] = 0xFFEE;
     REGS[PC] = 0x0100;
-    decode_init();
+    CPU_STATE = RUNNING;
 }
 
 void execute_next_instruction() {
@@ -749,6 +750,7 @@ static bool evaluate_condition_codes(uint8_t cc) {
             return true;
     }
 }
+
 /*
  * Call Instruction
  * Pushes the address of the instruction after the call on the stack, such that RET can pop it later;
@@ -886,8 +888,11 @@ void ei() {
 /*
  * Halt
  */
+//TODO needs to correctly implement halt
 void halt() {
-    //TODO
+    if (IME) {
+        CPU_STATE = HALTED;
+    }
 }
 
 ///////////////////////////////////////// MISC. INSTRUCTIONS /////////////////////////////////////////
@@ -905,7 +910,7 @@ void daa() {
         REGS[A] -= adjustment;
     }
     else {
-        if (HALF_CARRY_FLAG(flags) || (REGS[A] & 0xF > 9)) {
+        if (HALF_CARRY_FLAG(flags) || (REGS[A] & (0xF > 9))) {
             adjustment += 6;
         }
         if (CARRY_FLAG(flags) || (REGS[A] > 0x99)) {
@@ -931,5 +936,5 @@ void nop([[maybe_unused]] uint8_t opcode) {
 }
 
 void stop() {
-    //enter low power mode
+    CPU_STATE = HALTED;
 }
