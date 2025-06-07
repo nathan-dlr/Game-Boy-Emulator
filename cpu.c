@@ -73,7 +73,7 @@ uint8_t read_8bit_reg(uint8_t reg) {
  * Returns byte pointed to by PC
 */
 uint8_t fetch_byte() {
-    uint8_t byte = MEMORY[PC];
+    uint8_t byte = MEMORY[REGS[PC]];
     REGS[PC] += 0x0001;
     return byte;
 }
@@ -82,7 +82,7 @@ uint8_t fetch_byte() {
  * Returns word pointed to by PC
 */
 uint16_t fetch_word() {
-    uint16_t word = (MEMORY[REGS[PC]] << 4) + MEMORY[REGS[PC]];
+    uint16_t word = (MEMORY[REGS[PC] + 1] << 8) + MEMORY[REGS[PC]];
     REGS[PC] += 0x0002;
     return word;
 }
@@ -776,7 +776,7 @@ void jp(uint8_t cc, bool is_hl) {
         address = REGS[HL];
     }
     else {
-        address = fetch_byte();
+        address = fetch_word();
         if (!evaluate_condition_codes(cc)) {
             return;
         }

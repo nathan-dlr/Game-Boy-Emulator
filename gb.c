@@ -32,7 +32,7 @@ static void memory_init(const char* file_name) {
 
 
 void check_sp() {
-    if (MEMORY[0xFF02] = 0x81) {
+    if (MEMORY[0xFF02] == 0x81) {
         char c = MEMORY[0xFF01];
 
         printf("%c", c);

@@ -4,11 +4,11 @@
 #include "cpu.h"
 
 #define PREFIX 0xCB
-#define GET_FIRST_OCTAL_DIGIT(byte) (byte & 0xB0 >> 6)
-#define GET_SECOND_OCTAL_DIGIT(byte) (byte & 0x38 >> 3)
+#define GET_FIRST_OCTAL_DIGIT(byte) ((byte & 0xC0) >> 6)
+#define GET_SECOND_OCTAL_DIGIT(byte) ((byte & 0x38) >> 3)
 #define GET_THIRD_OCTAL_DIGIT(byte) (byte & 0x07)
 #define GET_BIT_THREE(byte) ((byte & 0x08) >> 3)
-#define GET_BITS_FOUR_FIVE(byte) ((byte & 0x30 >> 4))
+#define GET_BITS_FOUR_FIVE(byte) ((byte & 0x30) >> 4)
 
 static void relative_jumps(uint8_t opcode);
 static void load_immediate_add_16bit(uint8_t opcode);
