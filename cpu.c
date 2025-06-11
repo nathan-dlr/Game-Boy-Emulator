@@ -13,7 +13,7 @@
 #define HALF_CARRY_BIT 0x20
 #define CARRY_BIT 0x10
 #define SET_BIT(bit, value) (bit | value)
-#define CLEAR_BIT(bit, value) (~bit | value)
+#define CLEAR_BIT(bit, value) (~bit & value)
 #define BYTE 0
 #define WORD 1
 #define FIRST_NIBBLE(x) (x & 0x000F)
@@ -32,16 +32,19 @@ static uint8_t CPU_STATE;
 
 
 void cpu_init() {
-    REGS[AF] = 0x0100;
-    REGS[BC] = 0xFF13;
-    REGS[DE] = 0x00C1;
-    REGS[HL] = 0x8403;
+    REGS[AF] = 0x01B0;
+    REGS[BC] = 0x0013;
+    REGS[DE] = 0x00D8;
+    REGS[HL] = 0x014D;
     REGS[SP] = 0xFFEE;
     REGS[PC] = 0x0100;
     CPU_STATE = RUNNING;
 }
 
 void execute_next_instruction() {
+    if (REGS[PC] == 0x020f) {
+        REGS[PC] + 0;
+    }
     uint8_t next_byte = fetch_byte();
     decode(next_byte);
 }
@@ -52,17 +55,17 @@ static void write_8bit_reg(uint8_t reg, uint8_t val) {
     uint8_t index;
     if (reg % 2 == 0) {
         index = reg / 2;
-        REGS[index] = REGS[index] | (val << 4);
+        REGS[index] = (REGS[index] & 0x00FF) | (val << 8);
     }
     else {
         index = (reg - 1) / 2;
-        REGS[index] = REGS[index] | val;
+        REGS[index] = (REGS[index] & 0xFF00) | val;
     }
 }
 
 uint8_t read_8bit_reg(uint8_t reg) {
     if (reg % 2 == 0) {
-        return (REGS[reg / 2] & 0xFF00) >> 4;
+        return (REGS[reg / 2] & 0xFF00) >> 8;
     }
     else {
         return REGS[(reg - 1) / 2] & 0x00FF;
@@ -193,25 +196,25 @@ static void set_rot_flags(uint8_t result, bool set_zero, uint8_t carry_flag_new)
  * Operand types are describes by DEST_TYPE and SOURCE_TYPE
 */
 void ld(uint16_t dest, uint16_t source, uint8_t dest_type, uint8_t source_type) {
-    uint8_t source_val = 0;
+    uint16_t source_val = 0;
     switch (source_type) {
         case REG_8BIT:
-            source_val = read_8bit_reg(source_val);
+            source_val = (uint16_t) read_8bit_reg(source_val);
             break;
         case REG_16BIT:
             source_val = REGS[source];
             break;
         case POINTER:
-            source_val = MEMORY[source];
+            source_val = (uint16_t) MEMORY[source];
             break;
         case REG_POINTER:
-            source_val = MEMORY[REGS[source]];
+            source_val = (uint16_t) MEMORY[REGS[source]];
             break;
         case OFFSET:
-            source_val = MEMORY[0xFF00 + source];
+            source_val = (uint16_t) MEMORY[0xFF00 + source];
             break;
         case REG_OFFSET:
-            source_val = MEMORY[0xFF00 + REGS[source]];
+            source_val = (uint16_t) MEMORY[0xFF00 + REGS[source]];
             break;
         //source is 16 or 8 bit constant
         default:
@@ -220,23 +223,23 @@ void ld(uint16_t dest, uint16_t source, uint8_t dest_type, uint8_t source_type) 
     }
     switch (dest_type) {
         case REG_8BIT:
-            write_8bit_reg(dest, source_val);
-            break;
+            write_8bit_reg(dest, (uint8_t) source_val);
+            return;
         case REG_16BIT:
             REGS[dest] = source_val;
-            break;
+            return;
         case POINTER:
-            MEMORY[dest] = source_val;
-            break;
+            MEMORY[dest] = (uint8_t) source_val;
+            return;
         case REG_POINTER:
-            MEMORY[REGS[dest]] = source_val;
-            break;
+            MEMORY[REGS[dest]] = (uint8_t) source_val;
+            return;
         case OFFSET:
-            MEMORY[0xFF00 + dest] = source_val;
-            break;
+            MEMORY[0xFF00 + dest] = (uint8_t) source_val;
+            return;
         case REG_OFFSET:
-            MEMORY[0xFF00 + REGS[dest]] = source_val;
-            break;
+            MEMORY[0xFF00 + REGS[dest]] = (uint8_t) source_val;
+            return;
         default:
             perror("Invalid operand in load");
     }
@@ -251,11 +254,11 @@ void ld_inc(uint8_t action) {
             MEMORY[REGS[HL]--] = read_8bit_reg(A);
             return;
         case SOURCE_INC:
-            write_8bit_reg(A, REGS[HL]);
+            write_8bit_reg(A, MEMORY[REGS[HL]]);
             REGS[HL]++;
             return;
         case SOURCE_DEC:
-            write_8bit_reg(A, REGS[HL]);
+            write_8bit_reg(A, MEMORY[REGS[HL]]);
             REGS[HL]--;
             return;
         default:
@@ -372,29 +375,32 @@ void sbc(uint8_t operand, uint8_t operand_type) {
  */
 void inc(uint8_t operand, uint8_t operand_type) {
     uint8_t result = 0;
+    uint8_t source = 0;
     switch (operand_type) {
         case REG_8BIT:
-            result = read_8bit_reg(operand) + 1;
+            source = read_8bit_reg(operand);
+            result = source + 1;
             write_8bit_reg(operand, result);
             break;
         case REG_16BIT:
             REGS[operand] = REGS[operand] + 1;
             return;
         case REG_POINTER:
-            result = MEMORY[REGS[operand]] + 1;
+            source = MEMORY[REGS[operand]];
+            result = source + 1;
             MEMORY[REGS[operand]] = result;
             break;
         default:
             perror("Invalid Operand in INC");
     }
-    if (result > 0x000F) {
-        write_8bit_reg(F, SET_BIT(HALF_CARRY_BIT, read_8bit_reg(A)));
+    if ((source & 0x000F) == 0x000F) {
+        write_8bit_reg(F, SET_BIT(HALF_CARRY_BIT, read_8bit_reg(F)));
     }
     else {
-        write_8bit_reg(F, CLEAR_BIT(HALF_CARRY_BIT, read_8bit_reg(A)));
+        write_8bit_reg(F, CLEAR_BIT(HALF_CARRY_BIT, read_8bit_reg(F)));
     }
+    write_8bit_reg(F, CLEAR_BIT(NEGATIVE_BIT, read_8bit_reg(F)));
     set_zero_flag(result);
-    write_8bit_reg(F, CLEAR_BIT(NEGATIVE_BIT, read_8bit_reg(A)));
 
 
 }
@@ -739,11 +745,11 @@ static bool evaluate_condition_codes(uint8_t cc) {
     uint8_t flags = read_8bit_reg(F);
     switch (cc) {
         case NZ:
-            return (flags & (NEGATIVE_BIT | ZERO_BIT)) == (NEGATIVE_BIT | ZERO_BIT);
+            return (flags | ~ZERO_BIT) == ~ZERO_BIT;
         case Z:
             return (flags & ZERO_BIT) == ZERO_BIT;
         case NC:
-            return (flags & (NEGATIVE_BIT | CARRY_BIT)) == (NEGATIVE_BIT | CARRY_BIT);
+            return (flags | ~CARRY_BIT) == ~CARRY_BIT;
         case CARRY:
             return (flags & CARRY) == CARRY_BIT;
         default:
@@ -793,7 +799,7 @@ void jr(uint8_t cc) {
         return;
     }
     int8_t offset = (int8_t) fetch_byte();
-    REGS[PC] = REGS[PC] + 2 + offset;
+    REGS[PC] = REGS[PC] + offset;
 }
 
 /*

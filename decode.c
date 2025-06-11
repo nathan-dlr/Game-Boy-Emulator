@@ -76,6 +76,7 @@ void decode(uint8_t opcode) {
             second_index = first_octal_dig;
             break;
         default:
+            second_index = 0;
             perror("Invalid opcode in decode");
     }
     decode_lookup[first_index][second_index](opcode);
@@ -118,10 +119,10 @@ static void indirect_loading(uint8_t opcode) {
     uint8_t bits_four_five = GET_BITS_FOUR_FIVE(opcode);
     switch (bits_four_five) {
         case 0:
-            bit_three ? ld(A, BC, REG_8BIT, REG_16BIT) : ld(BC, A, REG_16BIT, REG_8BIT);
+            bit_three ? ld(A, BC, REG_8BIT, REG_POINTER) : ld(BC, A, REG_POINTER, REG_8BIT);
             return;
         case 1:
-            bit_three ? ld(A, DE, REG_16BIT, REG_16BIT) : ld(DE, A, REG_16BIT, REG_8BIT);
+            bit_three ? ld(A, DE, REG_16BIT, REG_POINTER) : ld(DE, A, REG_POINTER, REG_8BIT);
             return;
         case 2:
             bit_three ? ld_inc(SOURCE_INC) : ld_inc(DEST_INC);

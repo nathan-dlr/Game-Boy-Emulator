@@ -8,6 +8,7 @@
 static void memory_init(const char* file_name);
 static void check_sp();
 
+//we know it works at least until 0x020b
 int main(int argc, char *argv[]) {
     memory_init(argv[1]);
     cpu_init();
