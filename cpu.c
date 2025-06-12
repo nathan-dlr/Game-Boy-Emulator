@@ -41,8 +41,9 @@ void cpu_init() {
     CPU_STATE = RUNNING;
 }
 
+//TODO check call instruction
 void execute_next_instruction() {
-    if (REGS[PC] == 0x020f) {
+    if (REGS[PC] == 0xc246) {
         REGS[PC] + 0;
     }
     uint8_t next_byte = fetch_byte();
@@ -199,7 +200,7 @@ void ld(uint16_t dest, uint16_t source, uint8_t dest_type, uint8_t source_type) 
     uint16_t source_val = 0;
     switch (source_type) {
         case REG_8BIT:
-            source_val = (uint16_t) read_8bit_reg(source_val);
+            source_val = (uint16_t) read_8bit_reg(source);
             break;
         case REG_16BIT:
             source_val = REGS[source];
@@ -439,7 +440,7 @@ void dec(uint8_t operand, uint8_t operand_type) {
         write_8bit_reg(F, CLEAR_BIT(HALF_CARRY_BIT, read_8bit_reg(F)));
     }
     set_zero_flag(result);
-    write_8bit_reg(F, SET_BIT(NEGATIVE_BIT, read_8bit_reg(A)));
+    write_8bit_reg(F, SET_BIT(NEGATIVE_BIT, read_8bit_reg(F)));
 }
 
 ///////////////////////////////////////// LOGIC INSTRUCTIONS /////////////////////////////////////////
@@ -795,10 +796,10 @@ void jp(uint8_t cc, bool is_hl) {
  * Jumps to some relative offset if CC is met
  */
 void jr(uint8_t cc) {
+    int8_t offset = (int8_t) fetch_byte();
     if (!evaluate_condition_codes(cc)) {
         return;
     }
-    int8_t offset = (int8_t) fetch_byte();
     REGS[PC] = REGS[PC] + offset;
 }
 
