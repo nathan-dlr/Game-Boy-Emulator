@@ -41,7 +41,6 @@ void cpu_init() {
     CPU_STATE = RUNNING;
 }
 
-//TODO check call instruction
 void execute_next_instruction() {
     if (REGS[PC] == 0xc246) {
         REGS[PC] + 0;
@@ -761,16 +760,16 @@ static bool evaluate_condition_codes(uint8_t cc) {
 /*
  * Call Instruction
  * Pushes the address of the instruction after the call on the stack, such that RET can pop it later;
- * then it executes an implicit JP using the address pointed to by COSNT_16
+ * then it executes an implicit JP using the address pointed to by ADDRESS
  * Only executes if CC is met
  */
-void call(uint8_t cc, uint16_t const_16) {
+void call(uint8_t cc, uint16_t address) {
     if (!evaluate_condition_codes(cc)) {
         return;
     }
-    MEMORY[REGS[SP]] = PC + 2;
-    REGS[SP] += 2;
-    REGS[PC] = const_16;
+    MEMORY[--REGS[SP]] = (uint8_t) ((REGS[PC] & 0xFF00) >> 8);
+    MEMORY[--REGS[SP]] = (uint8_t) (REGS[PC] & 0x00FF);
+    REGS[PC] = address;
 }
 
 /*
@@ -863,8 +862,9 @@ void scf() {
  * Pop register whose index is indicated by REG_16 from the stack
  */
 void pop(uint8_t reg_16) {
-    REGS[reg_16] = REGS[reg_16] & MEMORY[REGS[SP]++];
-    REGS[reg_16] = REGS[reg_16] & (MEMORY[REGS[SP]++] << 4);
+    REGS[reg_16] = 0x0000;
+    REGS[reg_16] = MEMORY[REGS[SP]++];
+    REGS[reg_16] = REGS[reg_16] | (MEMORY[REGS[SP]++] << 8);
 }
 
 /*
@@ -872,8 +872,8 @@ void pop(uint8_t reg_16) {
  * Push register whose index is indicated by REG_16 from the stack
  */
 void push(uint8_t reg_16) {
-    MEMORY[--REGS[SP]] = (uint8_t) ((REGS[reg_16] & 0xF0) >> 4);
-    MEMORY[--REGS[SP]] = (uint8_t) (REGS[reg_16] & 0x0F);
+    MEMORY[--REGS[SP]] = (uint8_t) ((REGS[reg_16] & 0xFF00) >> 8);
+    MEMORY[--REGS[SP]] = (uint8_t) (REGS[reg_16] & 0x00FF);
 }
 
 ///////////////////////////////////////// INTERRUPT-RELATED INSTRUCTIONS /////////////////////////////////////////

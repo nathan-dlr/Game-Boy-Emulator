@@ -38,7 +38,7 @@ void cp(uint8_t operand, uint8_t operand_type);
 void and(uint8_t operand, uint8_t operand_type);
 void xor(uint8_t operand, uint8_t operand_type);
 void or(uint8_t operand, uint8_t operand_type);
-void call(uint8_t cc, uint16_t const_16);
+void call(uint8_t cc, uint16_t address);
 void jp(uint8_t cc, bool is_hl);
 void jr(uint8_t cc);
 void ret(uint8_t cc);
