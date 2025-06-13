@@ -29,6 +29,7 @@ static uint16_t REGS[6];
 static bool IME = false;
 static uint8_t CPU_STATE;
 
+static uint16_t temp_pc;
 
 
 void cpu_init() {
@@ -41,10 +42,25 @@ void cpu_init() {
     CPU_STATE = RUNNING;
 }
 
+//bug at c018 POP AF is popping the wrong value from the stack. incorrect value must've been written when stack pointer is 0xdfeb
+//wrong value being written to 0xff83 so instruction at second occurrence of 0xc061 (ld b [hl]) is loading ff into b instead of 0b
+//debug shift operations at 0xc06a
 void execute_next_instruction() {
-    if (REGS[PC] == 0xc246) {
+    //go to second occurrence of 0xc061
+    if (REGS[PC] == 0xc061) {
         REGS[PC] + 0;
     }
+    //WRONG VALUE BEING WRITTEN HERE
+    if (REGS[PC] == 0xc08d) {
+        REGS[PC] + 0;
+    }
+    if (REGS[PC] == 0xc06a) {
+        REGS[PC] + 0;
+    }
+    if (REGS[PC] == 0xc75a) {
+        REGS[PC] + 0;
+    }
+    temp_pc = REGS[PC];
     uint8_t next_byte = fetch_byte();
     decode(next_byte);
 }
@@ -91,7 +107,7 @@ uint16_t fetch_word() {
 }
 
 /*
- * Helper function for 8bit arethmetic instructions
+ * Helper function for 8bit arithmetic instructions
  * Returns value held by OPERAND of OPERAND_TYPE
 */
 static uint8_t get_8bit_operand(uint8_t operand, uint8_t operand_type) {
@@ -144,7 +160,7 @@ static void set_addition_flags(uint32_t result, bool length) {
     else {
         write_8bit_reg(F, CLEAR_BIT(HALF_CARRY_BIT, read_8bit_reg(F)));
     }
-    set_zero_flag(result);
+    length == BYTE ? set_zero_flag((uint8_t) result) : set_zero_flag((uint16_t) result);
     write_8bit_reg(F, CLEAR_BIT(NEGATIVE_BIT, read_8bit_reg(F)));
 }
 
@@ -230,15 +246,19 @@ void ld(uint16_t dest, uint16_t source, uint8_t dest_type, uint8_t source_type) 
             return;
         case POINTER:
             MEMORY[dest] = (uint8_t) source_val;
+            printf("Write: %X at  location %X during ld. PC = %X\n", source_val, dest, temp_pc);
             return;
         case REG_POINTER:
             MEMORY[REGS[dest]] = (uint8_t) source_val;
+            printf("Write: %X at  location %X during ld. PC = %X\n", source_val, REGS[dest], temp_pc);
             return;
         case OFFSET:
             MEMORY[0xFF00 + dest] = (uint8_t) source_val;
+            printf("Write: %X at  location %X during ld. PC = %X\n", source_val, 0xFF00 + dest, temp_pc);
             return;
         case REG_OFFSET:
             MEMORY[0xFF00 + REGS[dest]] = (uint8_t) source_val;
+            printf("Write: %X at  location %X during ld. PC = %X\n", source_val, 0xFF00 + REGS[dest], temp_pc);
             return;
         default:
             perror("Invalid operand in load");
@@ -248,9 +268,11 @@ void ld(uint16_t dest, uint16_t source, uint8_t dest_type, uint8_t source_type) 
 void ld_inc(uint8_t action) {
     switch(action) {
         case DEST_INC:
+            printf("Write: %X at  location %X during ld inc. PC = %X\n", read_8bit_reg(A), REGS[HL], temp_pc);
             MEMORY[REGS[HL]++] = read_8bit_reg(A);
             return;
         case DEST_DEC:
+            printf("Write: %X at  location %X during ld inc. PC = %X\n", read_8bit_reg(A), REGS[HL], temp_pc);
             MEMORY[REGS[HL]--] = read_8bit_reg(A);
             return;
         case SOURCE_INC:
@@ -324,11 +346,11 @@ void add(uint16_t operand, uint8_t operand_type) {
  * Zero, carry, and half-carry flags are set
  */
 void adc(uint8_t operand, uint8_t operand_type) {
-    uint8_t carry_bit = HALF_CARRY_FLAG(read_8bit_reg(F));
+    uint8_t carry_bit = CARRY_FLAG(read_8bit_reg(F));
     uint8_t source_val = get_8bit_operand(operand, operand_type);
-    uint32_t result = source_val + carry_bit;
+    uint16_t result = read_8bit_reg(A) + source_val + carry_bit;
     write_8bit_reg(A, (uint8_t) result);
-    set_addition_flags(result, BYTE);
+    set_addition_flags((uint32_t) result, BYTE);
 }
 
 /*
@@ -389,6 +411,7 @@ void inc(uint8_t operand, uint8_t operand_type) {
             source = MEMORY[REGS[operand]];
             result = source + 1;
             MEMORY[REGS[operand]] = result;
+            printf("Write: %X at location %X during inc. PC = %X\n", result, REGS[operand], temp_pc);
             break;
         default:
             perror("Invalid Operand in INC");
@@ -425,6 +448,7 @@ void dec(uint8_t operand, uint8_t operand_type) {
             source_val = MEMORY[REGS[operand]];
             result = source_val - 1;
             MEMORY[REGS[operand]] = result;
+            printf("Write: %X at location %X during dec. PC = %X\n", result, REGS[operand], temp_pc);
             break;
         default:
             result = 0;
@@ -453,12 +477,12 @@ void dec(uint8_t operand, uint8_t operand_type) {
 void and(uint8_t operand, uint8_t operand_type) {
     uint8_t source_val = get_8bit_operand(operand, operand_type);
     uint8_t result = read_8bit_reg(A) & source_val;
-    write_8bit_reg(A, source_val);
+    write_8bit_reg(A, result);
 
     set_zero_flag((uint32_t) result);
-    write_8bit_reg(F, SET_BIT(HALF_CARRY_BIT, read_8bit_reg(A)));
-    write_8bit_reg(F, CLEAR_BIT(NEGATIVE_BIT, read_8bit_reg(A)));
-    write_8bit_reg(F, CLEAR_BIT(CARRY_BIT, read_8bit_reg(A)));
+    write_8bit_reg(F, SET_BIT(HALF_CARRY_BIT, read_8bit_reg(F)));
+    write_8bit_reg(F, CLEAR_BIT(NEGATIVE_BIT, read_8bit_reg(F)));
+    write_8bit_reg(F, CLEAR_BIT(CARRY_BIT, read_8bit_reg(F)));
 }
 
 /*
@@ -470,12 +494,12 @@ void and(uint8_t operand, uint8_t operand_type) {
 void or(uint8_t operand, uint8_t operand_type) {
     uint8_t source_val = get_8bit_operand(operand, operand_type);
     uint8_t result = read_8bit_reg(A) | source_val;
-    write_8bit_reg(A, source_val);
+    write_8bit_reg(A, result);
 
     set_zero_flag((uint32_t) result);
-    write_8bit_reg(F, CLEAR_BIT(HALF_CARRY_BIT, read_8bit_reg(A)));
-    write_8bit_reg(F, CLEAR_BIT(NEGATIVE_BIT, read_8bit_reg(A)));
-    write_8bit_reg(F, CLEAR_BIT(CARRY_BIT, read_8bit_reg(A)));
+    write_8bit_reg(F, CLEAR_BIT(HALF_CARRY_BIT, read_8bit_reg(F)));
+    write_8bit_reg(F, CLEAR_BIT(NEGATIVE_BIT, read_8bit_reg(F)));
+    write_8bit_reg(F, CLEAR_BIT(CARRY_BIT, read_8bit_reg(F)));
 }
 
 /*
@@ -487,12 +511,12 @@ void or(uint8_t operand, uint8_t operand_type) {
 void xor(uint8_t operand, uint8_t operand_type) {
     uint8_t source_val = get_8bit_operand(operand, operand_type);
     uint8_t result = read_8bit_reg(A) ^ source_val;
-    write_8bit_reg(A, source_val);
+    write_8bit_reg(A, result);
 
     set_zero_flag((uint32_t) result);
-    write_8bit_reg(F, CLEAR_BIT(HALF_CARRY_BIT, read_8bit_reg(A)));
-    write_8bit_reg(F, CLEAR_BIT(NEGATIVE_BIT, read_8bit_reg(A)));
-    write_8bit_reg(F, CLEAR_BIT(CARRY_BIT, read_8bit_reg(A)));
+    write_8bit_reg(F, CLEAR_BIT(HALF_CARRY_BIT, read_8bit_reg(F)));
+    write_8bit_reg(F, CLEAR_BIT(NEGATIVE_BIT, read_8bit_reg(F)));
+    write_8bit_reg(F, CLEAR_BIT(CARRY_BIT, read_8bit_reg(F)));
 }
 
 
@@ -621,7 +645,7 @@ void rr(uint8_t source_reg, bool reg_8bit) {
     uint8_t source_val = reg_8bit ? read_8bit_reg(source_reg) : MEMORY[REGS[HL]];
     uint8_t carry_flag_new = source_val & 0x01 ? 1 : 0;
     uint8_t new_val = (source_val >> 1);
-    new_val |= carry_flag_old << 8;
+    new_val |= carry_flag_old << 7;
     reg_8bit ? write_8bit_reg(source_reg, new_val) : (MEMORY[REGS[HL]] = new_val);
 
     set_rot_flags(new_val, true, carry_flag_new);
@@ -637,7 +661,7 @@ void rra() {
     uint8_t source_val = read_8bit_reg(A);
     uint8_t carry_flag_new = source_val & 0x01 ? 1 : 0;
     uint8_t new_val = (source_val >> 1);
-    new_val |= carry_flag_old << 8;
+    new_val |= carry_flag_old << 7;
     write_8bit_reg(A, new_val);
 
     set_rot_flags(new_val, false, carry_flag_new);
@@ -653,7 +677,7 @@ void rrc(uint8_t source_reg, bool reg_8bit) {
     uint8_t carry_flag_new = source_val & 0x01 ? 1 : 0;
     uint8_t new_msb = source_val & 0x0001;
     uint8_t new_val = (source_val >> 1);
-    new_val |= new_msb << 8;
+    new_val |= new_msb << 7;
     reg_8bit ? write_8bit_reg(source_reg, new_val) : (MEMORY[REGS[HL]] = new_val);
 
     set_rot_flags(new_val, true, carry_flag_new);
@@ -668,7 +692,7 @@ void rrca() {
     uint8_t carry_flag_new = source_val & 0x01 ? 1 : 0;
     uint8_t new_msb = source_val & 0x01;
     uint8_t new_val = (source_val >> 1);
-    new_val |= new_msb << 8;
+    new_val |= new_msb << 7;
     write_8bit_reg(A, new_val);
 
     set_rot_flags(new_val, false, carry_flag_new);
@@ -751,7 +775,7 @@ static bool evaluate_condition_codes(uint8_t cc) {
         case NC:
             return (flags | ~CARRY_BIT) == ~CARRY_BIT;
         case CARRY:
-            return (flags & CARRY) == CARRY_BIT;
+            return (flags & CARRY_BIT) == CARRY_BIT;
         default:
             return true;
     }
@@ -769,6 +793,7 @@ void call(uint8_t cc, uint16_t address) {
     }
     MEMORY[--REGS[SP]] = (uint8_t) ((REGS[PC] & 0xFF00) >> 8);
     MEMORY[--REGS[SP]] = (uint8_t) (REGS[PC] & 0x00FF);
+    printf("Write: %X at  SP = %X in call. PC = %X\n", REGS[PC], REGS[SP], temp_pc);
     REGS[PC] = address;
 }
 
@@ -810,8 +835,9 @@ void ret(uint8_t cc) {
     if (!evaluate_condition_codes(cc)) {
         return;
     }
-    REGS[PC] = REGS[PC] & MEMORY[REGS[SP]++];
-    REGS[PC] = REGS[PC] & (MEMORY[REGS[SP]++] << 4);
+    REGS[PC] = 0x0000;
+    REGS[PC] = MEMORY[REGS[SP]++];
+    REGS[PC] = REGS[PC] | (MEMORY[REGS[SP]++] << 8);
 
 }
 
@@ -820,8 +846,9 @@ void ret(uint8_t cc) {
  */
 void reti() {
     IME = true;
-    REGS[PC] = REGS[PC] & MEMORY[REGS[SP]++];
-    REGS[PC] = REGS[PC] & (MEMORY[REGS[SP]++] << 4);
+    REGS[PC] = 0x0000;
+    REGS[PC] = MEMORY[REGS[SP]++];
+    REGS[PC] = REGS[PC] & (MEMORY[REGS[SP]++] << 8);
 }
 
 /*
@@ -874,6 +901,7 @@ void pop(uint8_t reg_16) {
 void push(uint8_t reg_16) {
     MEMORY[--REGS[SP]] = (uint8_t) ((REGS[reg_16] & 0xFF00) >> 8);
     MEMORY[--REGS[SP]] = (uint8_t) (REGS[reg_16] & 0x00FF);
+    printf("Write: %X at  location  %X in call. PC = %X\n", REGS[reg_16], REGS[SP], temp_pc);
 }
 
 ///////////////////////////////////////// INTERRUPT-RELATED INSTRUCTIONS /////////////////////////////////////////

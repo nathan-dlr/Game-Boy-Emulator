@@ -40,7 +40,7 @@ typedef void (*opcode_func)(uint8_t);
 static opcode_func decode_lookup[5][8] = {
         {relative_jumps,load_immediate_add_16bit,indirect_loading,inc_or_dec,inc_or_dec,inc_or_dec,ld_8bit,ops_on_accumulator},
         {ld_or_halt,nop,nop,nop,nop,nop,nop,nop},
-        {alu,nop,nop,nop,nop,nop,nop,nop},
+        {alu,alu,alu,alu,alu,alu,alu,alu},
         {mem_mapped_ops, pop_various, conditional_jumps,assorted_ops, conditional_calls, push_call_nop, alu,     rst},
         {cb_prefixed_ops,nop,nop,nop,nop,nop,nop,nop}
 };
@@ -64,7 +64,7 @@ void decode(uint8_t opcode) {
             second_index = third_octal_dig;
             break;
         case 1:
-            second_index = third_octal_dig == 6;
+            second_index = 0;
             break;
         case 2:
             second_index = second_octal_dig;
@@ -143,7 +143,7 @@ static void inc_or_dec(uint8_t opcode) {
         uint8_t bit_three = GET_BIT_THREE(opcode);
         uint8_t bits_four_five = GET_BITS_FOUR_FIVE(opcode);
         operand = REGISTER_PAIRS_DT[bits_four_five];
-        bit_three ? inc(operand, REG_16BIT) : dec(operand,REG_16BIT);
+        bit_three ? dec(operand, REG_16BIT) : inc(operand,REG_16BIT);
     }
     //operand is 8 bit register or byte pointed to by HL
     else {
@@ -195,7 +195,14 @@ static void ops_on_accumulator(uint8_t opcode) {
 static void ld_or_halt(uint8_t opcode) {
     uint8_t dest_reg = GET_SECOND_OCTAL_DIGIT(opcode);
     uint8_t source_reg = GET_THIRD_OCTAL_DIGIT(opcode);
-    dest_reg == 6 ? halt() : ld(REGISTERS_DT[dest_reg], REGISTERS_DT[source_reg], REG_8BIT, REG_8BIT);
+    if ((source_reg == 6) && (dest_reg == 6)) {
+        halt();
+    }
+    else {
+        uint8_t source_type = source_reg == 6 ? REG_POINTER : REG_8BIT;
+        uint8_t dest_type = dest_reg == 6 ? REG_POINTER : REG_8BIT;
+        ld(REGISTERS_DT[dest_reg], REGISTERS_DT[source_reg], dest_type, source_type);
+    }
 }
 
 static void alu(uint8_t opcode) {
@@ -272,21 +279,23 @@ static void pop_various(uint8_t opcode) {
     if (!bit_three) {
         pop(REGISTER_PAIRS2_DT[bits_four_five]);
     }
-    switch (bits_four_five) {
-        case 0:
-            ret(NONE);
-            return;
-        case 1:
-            reti();
-            return;
-        case 2:
-            jp(NONE, true);
-            return;
-        case 3:
-            ld(SP, HL, REG_16BIT, REG_16BIT);
-            return;
-        default:
-            perror("Invalid opcode in decoding pop");
+    else {
+        switch (bits_four_five) {
+            case 0:
+                ret(NONE);
+                return;
+            case 1:
+                reti();
+                return;
+            case 2:
+                jp(NONE, true);
+                return;
+            case 3:
+                ld(SP, HL, REG_16BIT, REG_16BIT);
+                return;
+            default:
+                perror("Invalid opcode in decoding pop");
+        }
     }
 }
 
@@ -342,7 +351,9 @@ static void push_call_nop(uint8_t opcode) {
     if (!bit_three) {
         push(REGISTER_PAIRS2_DT[bits_four_five]);
     }
-    bits_four_five == 0 ? call(NONE, fetch_word()) : nop(opcode);
+    else {
+        bits_four_five == 0 ? call(NONE, fetch_word()) : nop(opcode);
+    }
 }
 
 static void cb_prefixed_ops(uint8_t opcode) {
