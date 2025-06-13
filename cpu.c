@@ -28,7 +28,6 @@ static uint16_t REGS[6];
 /* Interrupt Master Enable Flag */
 static bool IME = false;
 static uint8_t CPU_STATE;
-
 static uint16_t temp_pc;
 
 
@@ -40,24 +39,52 @@ void cpu_init() {
     REGS[SP] = 0xFFEE;
     REGS[PC] = 0x0100;
     CPU_STATE = RUNNING;
+    MEMORY[P1] = 0xCF;
+    MEMORY[SB] = 0x00;
+    MEMORY[SC] = 0x7E;
+    MEMORY[DIV] = 0xAB;
+    MEMORY[TIMA] = 0x00;
+    MEMORY[TMA] = 0x00;
+    MEMORY[TAC] = 0xF8;
+    MEMORY[IF] = 0xE1;
+    MEMORY[NR10] = 0x80;
+    MEMORY[NR11] = 0xBF;
+    MEMORY[NR12] = 0xF3;
+    MEMORY[NR13] = 0xFF;
+    MEMORY[NR14] = 0xBF;
+    MEMORY[NR21] = 0x3F;
+    MEMORY[NR22] = 0x00;
+    MEMORY[NR23] = 0xFF;
+    MEMORY[NR24] = 0xBF;
+    MEMORY[NR30] = 0x7F;
+    MEMORY[NR31] = 0xFf;
+    MEMORY[NR32] = 0x9F;
+    MEMORY[NR33] = 0xFF;
+    MEMORY[NR34] = 0xBF;
+    MEMORY[NR41] = 0xFF;
+    MEMORY[NR42] = 0x00;
+    MEMORY[NR43] = 0x00;
+    MEMORY[NR44] = 0xBF;
+    MEMORY[NR50] = 0x77;
+    MEMORY[NR51] = 0xF3;
+    MEMORY[NR52] = 0xF1;
+    MEMORY[LCDC] = 0x91;
+    MEMORY[STAT] = 0x85;
+    MEMORY[SCY] = 0x00;
+    MEMORY[SCX] = 0x00;
+    MEMORY[LY] = 0x00;
+    MEMORY[LYC] = 0x00;
+    MEMORY[DMA] = 0xFF;
+    MEMORY[BGP] = 0xFC;
+    MEMORY[OBP0] = 0x00;
+    MEMORY[OBP1] = 0x00;
+    MEMORY[WY] = 0x00;
+    MEMORY[WX] = 0x00;
 }
 
-//bug at c018 POP AF is popping the wrong value from the stack. incorrect value must've been written when stack pointer is 0xdfeb
-//wrong value being written to 0xff83 so instruction at second occurrence of 0xc061 (ld b [hl]) is loading ff into b instead of 0b
-//debug shift operations at 0xc06a
+//if e and a are not the same the test fails
 void execute_next_instruction() {
-    //go to second occurrence of 0xc061
-    if (REGS[PC] == 0xc061) {
-        REGS[PC] + 0;
-    }
-    //WRONG VALUE BEING WRITTEN HERE
-    if (REGS[PC] == 0xc08d) {
-        REGS[PC] + 0;
-    }
-    if (REGS[PC] == 0xc06a) {
-        REGS[PC] + 0;
-    }
-    if (REGS[PC] == 0xc75a) {
+    if (REGS[PC] == 0xc32c) {
         REGS[PC] + 0;
     }
     temp_pc = REGS[PC];
@@ -212,6 +239,9 @@ static void set_rot_flags(uint8_t result, bool set_zero, uint8_t carry_flag_new)
  * Operand types are describes by DEST_TYPE and SOURCE_TYPE
 */
 void ld(uint16_t dest, uint16_t source, uint8_t dest_type, uint8_t source_type) {
+    if ((source_type == CONST_16BIT) && (source == 0x1200) && (dest_type == REG_16BIT) && (dest == BC)) {
+        REGS[PC] +=0;
+    }
     uint16_t source_val = 0;
     switch (source_type) {
         case REG_8BIT:
@@ -246,19 +276,15 @@ void ld(uint16_t dest, uint16_t source, uint8_t dest_type, uint8_t source_type) 
             return;
         case POINTER:
             MEMORY[dest] = (uint8_t) source_val;
-            printf("Write: %X at  location %X during ld. PC = %X\n", source_val, dest, temp_pc);
             return;
         case REG_POINTER:
             MEMORY[REGS[dest]] = (uint8_t) source_val;
-            printf("Write: %X at  location %X during ld. PC = %X\n", source_val, REGS[dest], temp_pc);
             return;
         case OFFSET:
             MEMORY[0xFF00 + dest] = (uint8_t) source_val;
-            printf("Write: %X at  location %X during ld. PC = %X\n", source_val, 0xFF00 + dest, temp_pc);
             return;
         case REG_OFFSET:
             MEMORY[0xFF00 + REGS[dest]] = (uint8_t) source_val;
-            printf("Write: %X at  location %X during ld. PC = %X\n", source_val, 0xFF00 + REGS[dest], temp_pc);
             return;
         default:
             perror("Invalid operand in load");
@@ -268,11 +294,9 @@ void ld(uint16_t dest, uint16_t source, uint8_t dest_type, uint8_t source_type) 
 void ld_inc(uint8_t action) {
     switch(action) {
         case DEST_INC:
-            printf("Write: %X at  location %X during ld inc. PC = %X\n", read_8bit_reg(A), REGS[HL], temp_pc);
             MEMORY[REGS[HL]++] = read_8bit_reg(A);
             return;
         case DEST_DEC:
-            printf("Write: %X at  location %X during ld inc. PC = %X\n", read_8bit_reg(A), REGS[HL], temp_pc);
             MEMORY[REGS[HL]--] = read_8bit_reg(A);
             return;
         case SOURCE_INC:
@@ -411,7 +435,6 @@ void inc(uint8_t operand, uint8_t operand_type) {
             source = MEMORY[REGS[operand]];
             result = source + 1;
             MEMORY[REGS[operand]] = result;
-            printf("Write: %X at location %X during inc. PC = %X\n", result, REGS[operand], temp_pc);
             break;
         default:
             perror("Invalid Operand in INC");
@@ -448,7 +471,6 @@ void dec(uint8_t operand, uint8_t operand_type) {
             source_val = MEMORY[REGS[operand]];
             result = source_val - 1;
             MEMORY[REGS[operand]] = result;
-            printf("Write: %X at location %X during dec. PC = %X\n", result, REGS[operand], temp_pc);
             break;
         default:
             result = 0;
@@ -793,7 +815,6 @@ void call(uint8_t cc, uint16_t address) {
     }
     MEMORY[--REGS[SP]] = (uint8_t) ((REGS[PC] & 0xFF00) >> 8);
     MEMORY[--REGS[SP]] = (uint8_t) (REGS[PC] & 0x00FF);
-    printf("Write: %X at  SP = %X in call. PC = %X\n", REGS[PC], REGS[SP], temp_pc);
     REGS[PC] = address;
 }
 
@@ -901,7 +922,6 @@ void pop(uint8_t reg_16) {
 void push(uint8_t reg_16) {
     MEMORY[--REGS[SP]] = (uint8_t) ((REGS[reg_16] & 0xFF00) >> 8);
     MEMORY[--REGS[SP]] = (uint8_t) (REGS[reg_16] & 0x00FF);
-    printf("Write: %X at  location  %X in call. PC = %X\n", REGS[reg_16], REGS[SP], temp_pc);
 }
 
 ///////////////////////////////////////// INTERRUPT-RELATED INSTRUCTIONS /////////////////////////////////////////
