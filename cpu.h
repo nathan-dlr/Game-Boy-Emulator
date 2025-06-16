@@ -7,7 +7,7 @@
 #define DIV 0xFF04
 #define TIMA 0xFF05
 #define TMA 0xFF06
-#define TAC 0xFF06
+#define TAC 0xFF07
 #define IF 0xFF0F
 #define NR10 0xFF10
 #define NR11 0xFF11
