@@ -20,6 +20,10 @@ int main(int argc, char *argv[]) {
 }
 
 uint8_t read_memory(uint16_t address) {
+    //for debugging with gameboy doctor
+    if (address == LY) {
+        return 0x90;
+    }
     return MEMORY[address];
 }
 

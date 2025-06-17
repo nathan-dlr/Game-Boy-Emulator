@@ -52,8 +52,7 @@ static rot_shift_func rotation_shift_ops[8] = {rlc, rrc, rl ,rr, sla, sra, swap,
  * Algorithm described in "DECODING Game Boy Z80 OPCODES" by Scott Mansell
 */
 void decode(uint8_t opcode) {
-    unsigned char first_nibble = opcode & 0xF0;
-    bool CB_prefix = first_nibble == PREFIX;
+    bool CB_prefix = opcode == PREFIX;
     uint8_t first_octal_dig = GET_FIRST_OCTAL_DIGIT(opcode);
     uint8_t second_octal_dig = GET_SECOND_OCTAL_DIGIT(opcode);
     uint8_t third_octal_dig = GET_THIRD_OCTAL_DIGIT(opcode);
@@ -73,7 +72,7 @@ void decode(uint8_t opcode) {
             second_index = third_octal_dig;
             break;
         case 4:
-            second_index = first_octal_dig;
+            second_index = 0;
             break;
         default:
             second_index = 0;
@@ -122,7 +121,7 @@ static void indirect_loading(uint8_t opcode) {
             bit_three ? ld(A, BC, REG_8BIT, REG_POINTER) : ld(BC, A, REG_POINTER, REG_8BIT);
             return;
         case 1:
-            bit_three ? ld(A, DE, REG_16BIT, REG_POINTER) : ld(DE, A, REG_POINTER, REG_8BIT);
+            bit_three ? ld(A, DE, REG_8BIT, REG_POINTER) : ld(DE, A, REG_POINTER, REG_8BIT);
             return;
         case 2:
             bit_three ? ld_inc(SOURCE_INC) : ld_inc(DEST_INC);
@@ -361,7 +360,7 @@ static void cb_prefixed_ops(uint8_t opcode) {
     uint8_t first_octal_dig = GET_FIRST_OCTAL_DIGIT(opcode);
     uint8_t bit_num = GET_SECOND_OCTAL_DIGIT(opcode);
     uint8_t reg = GET_THIRD_OCTAL_DIGIT(opcode);
-    bool reg_8bit = reg == 6;
+    bool reg_8bit = reg != 6;
     switch (first_octal_dig) {
         case 0:
             //TODO change "bit_num" to something that makes more sense?

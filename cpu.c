@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include "gb.h"
 #include "cpu.h"
 #include "decode.h"
@@ -28,7 +29,7 @@ static uint16_t REGS[6];
 /* Interrupt Master Enable Flag */
 static bool IME = false;
 static uint8_t CPU_STATE;
-static uint16_t temp_pc;
+static FILE* log;
 
 
 void cpu_init() {
@@ -36,15 +37,38 @@ void cpu_init() {
     REGS[BC] = 0x0013;
     REGS[DE] = 0x00D8;
     REGS[HL] = 0x014D;
-    REGS[SP] = 0xFFEE;
+    REGS[SP] = 0xFFFE;
     REGS[PC] = 0x0100;
     CPU_STATE = RUNNING;
+    log =  fopen("logfile", "w");
 }
 
 static uint8_t read_8bit_reg(uint8_t reg);
 //if e and a are not the same the test fails
 void execute_next_instruction() {
-    temp_pc = REGS[PC];
+    fprintf(log, "A:%02X F:%02X B:%02X C:%02X D:%02X E:%02X H:%02X L:%02X SP:%04X PC:%04X PCMEM:%02X,%02X,%02X,%02X\n",
+           read_8bit_reg(A),
+           read_8bit_reg(F),
+           read_8bit_reg(B),
+           read_8bit_reg(C),
+           read_8bit_reg(D),
+           read_8bit_reg(E),
+           read_8bit_reg(H),
+           read_8bit_reg(L),
+           REGS[SP],
+           REGS[PC],
+           MEMORY[REGS[PC]],
+           MEMORY[REGS[PC] + 1],
+           MEMORY[REGS[PC] + 2],
+           MEMORY[REGS[PC] + 3]);
+    fseek(log, 0, SEEK_END);
+    if (ftell(log) >= 0xF00000) {
+        fclose(log);
+        exit(0);
+    }
+    if (REGS[PC] == 0xC48B && REGS[AF] == 0x00C0 && REGS[BC] == 0x00FF) {
+        REGS[PC] += 0;
+    }
     uint8_t next_byte = fetch_byte();
     decode(next_byte);
 }
@@ -196,10 +220,6 @@ static void set_rot_flags(uint8_t result, bool set_zero, uint8_t carry_flag_new)
  * Operand types are describes by DEST_TYPE and SOURCE_TYPE
 */
 void ld(uint16_t dest, uint16_t source, uint8_t dest_type, uint8_t source_type) {
-    //ld de 0
-    if ((dest == DE) && (dest_type == REG_16BIT) && (source == 0) && (source_type == CONST_16BIT)) {
-        REGS[PC] += 0;
-    }
     uint16_t source_val = 0;
     switch (source_type) {
         case REG_8BIT:
@@ -253,10 +273,12 @@ void ld(uint16_t dest, uint16_t source, uint8_t dest_type, uint8_t source_type) 
 void ld_inc(uint8_t action) {
     switch(action) {
         case DEST_INC:
-            write_memory(REGS[HL]++, read_8bit_reg(A));
+            write_memory(REGS[HL], read_8bit_reg(A));
+            REGS[HL]++;
             return;
         case DEST_DEC:
-            write_memory(REGS[HL]--, read_8bit_reg(A));
+            write_memory(REGS[HL], read_8bit_reg(A));
+            REGS[HL]--;
             return;
         case SOURCE_INC:
             write_8bit_reg(A, read_memory(REGS[HL]));
@@ -718,7 +740,6 @@ void srl(uint8_t source_reg, bool reg_8bit) {
     uint8_t source_val = reg_8bit ? read_8bit_reg(source_reg) : read_memory(REGS[HL]);
     uint8_t carry_flag_new = source_val & 0x01 ? 1 : 0;
     uint8_t new_val = source_val >> 1;
-    new_val &= 0xEF;
     reg_8bit ? write_8bit_reg(source_reg, new_val) : write_memory(REGS[HL], new_val);
 
     set_rot_flags(new_val, true, carry_flag_new);
@@ -772,8 +793,10 @@ void call(uint8_t cc, uint16_t address) {
     if (!evaluate_condition_codes(cc)) {
         return;
     }
-    write_memory(--REGS[SP], (uint8_t) ((REGS[PC] & 0xFF00) >> 8));
-    write_memory(--REGS[SP], (uint8_t) (REGS[PC] & 0xFF00));
+    REGS[SP]--;
+    write_memory(REGS[SP], (uint8_t) ((REGS[PC] & 0xFF00) >> 8));
+    REGS[SP]--;
+    write_memory(REGS[SP], (uint8_t) (REGS[PC] & 0x00FF));
     REGS[PC] = address;
 }
 
@@ -816,8 +839,10 @@ void ret(uint8_t cc) {
         return;
     }
     REGS[PC] = 0x0000;
-    REGS[PC] = read_memory(REGS[SP]++);
-    REGS[PC] = REGS[PC] | read_memory(REGS[SP]++ << 8);
+    REGS[PC] = read_memory(REGS[SP]);
+    REGS[SP]++;
+    REGS[PC] = REGS[PC] | (read_memory(REGS[SP]) << 8);
+    REGS[SP]++;
 }
 
 /*
@@ -826,8 +851,10 @@ void ret(uint8_t cc) {
 void reti() {
     IME = true;
     REGS[PC] = 0x0000;
-    REGS[PC] = read_memory(REGS[SP]++);
-    REGS[PC] = REGS[PC] & read_memory(REGS[SP]++ << 8);
+    REGS[PC] = read_memory(REGS[SP]);
+    REGS[SP]++;
+    REGS[PC] = REGS[PC] | (read_memory(REGS[SP]) << 8);
+    REGS[SP]++;
 }
 
 /*
@@ -869,8 +896,10 @@ void scf() {
  */
 void pop(uint8_t reg_16) {
     REGS[reg_16] = 0x0000;
-    REGS[reg_16] = read_memory(REGS[SP]++);
-    REGS[reg_16] = REGS[reg_16] | read_memory(REGS[SP]++ << 8);
+    REGS[reg_16] = read_memory(REGS[SP]);
+    REGS[SP]++;
+    REGS[reg_16] = REGS[reg_16] | (read_memory(REGS[SP]) << 8);
+    REGS[SP]++;
     if (reg_16 == AF) {
         REGS[AF] &= 0xFFF0;
     }
@@ -881,8 +910,10 @@ void pop(uint8_t reg_16) {
  * Push register whose index is indicated by REG_16 from the stack
  */
 void push(uint8_t reg_16) {
-    write_memory(--REGS[SP], (uint8_t) ((REGS[reg_16] & 0xFF00) >> 8));
-    write_memory(--REGS[SP], (uint8_t) (REGS[reg_16] & 0x00FF));
+    REGS[SP]--;
+    write_memory(REGS[SP], (uint8_t) ((REGS[reg_16] & 0xFF00) >> 8));
+    REGS[SP]--;
+    write_memory(REGS[SP], (uint8_t) (REGS[reg_16] & 0x00FF));
 }
 
 ///////////////////////////////////////// INTERRUPT-RELATED INSTRUCTIONS /////////////////////////////////////////
