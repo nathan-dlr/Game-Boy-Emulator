@@ -66,7 +66,7 @@ void execute_next_instruction() {
         fclose(log);
         exit(0);
     }
-    if (REGS[PC] == 0xC48B && REGS[AF] == 0x00C0 && REGS[BC] == 0x00FF) {
+    if (REGS[PC] == 0xc48c && REGS[AF] == 0x0080) {
         REGS[PC] += 0;
     }
     uint8_t next_byte = fetch_byte();
@@ -155,20 +155,23 @@ static void set_zero_flag(uint32_t result) {
 /*
  * Uses the RESULT of an addition operation and the LENGTH of the operands to set flags
 */
-static void set_addition_flags(uint32_t result, bool length) {
-    if ((length == BYTE && result > 0x000F) || (length == WORD && result > 0x00FF)) {
+//TODO MAKE SEPERATE FUNCTION FOR WORD
+static void set_addition_flags(uint32_t result, uint16_t prev, bool length) {
+    if ((length == BYTE && ((result & 0x0F) < (prev & 0x0F))) || (length == WORD && ((result & 0x0F00) < (prev & 0x0F00)))) {
         write_8bit_reg(F, SET_BIT(HALF_CARRY_BIT, read_8bit_reg(F)));
     }
     else {
         write_8bit_reg(F, CLEAR_BIT(HALF_CARRY_BIT, read_8bit_reg(F)));
     }
-    if ((length == BYTE && result > 0x00FF) || (length == WORD && result > 0xFFFF)) {
+    if ((length == BYTE && ((result & 0xF0) < (prev & 0xF0))) || (length == WORD && ((result & 0xF000) < (prev & 0xF000)))) {
         write_8bit_reg(F, SET_BIT(CARRY_BIT, read_8bit_reg(F)));
     }
     else {
-        write_8bit_reg(F, CLEAR_BIT(HALF_CARRY_BIT, read_8bit_reg(F)));
+        write_8bit_reg(F, CLEAR_BIT(CARRY_BIT, read_8bit_reg(F)));
     }
-    length == BYTE ? set_zero_flag((uint8_t) result) : set_zero_flag((uint16_t) result);
+    if (length == BYTE) {
+        set_zero_flag((uint8_t) result);
+    }
     write_8bit_reg(F, CLEAR_BIT(NEGATIVE_BIT, read_8bit_reg(F)));
 }
 
@@ -295,7 +298,7 @@ void ld_inc(uint8_t action) {
 
 void ld_sp_off(int8_t offset) {
     REGS[HL] = REGS[SP] + offset;
-    set_addition_flags(REGS[HL], WORD);
+    set_addition_flags(REGS[HL], REGS[SP], WORD);
 }
 
 ///////////////////////////////////////// ARITHMETIC INSTRUCTIONS  /////////////////////////////////////////
@@ -308,36 +311,32 @@ void ld_sp_off(int8_t offset) {
  */
 void add(uint16_t operand, uint8_t operand_type) {
     uint32_t result;
+    uint8_t accumulator = read_8bit_reg(A);
     switch (operand_type) {
         case REG_8BIT:
-            result = read_8bit_reg(A) + read_8bit_reg(operand);
+            result = accumulator + read_8bit_reg(operand);
+            set_addition_flags(result, accumulator, BYTE);
             write_8bit_reg(A, (uint8_t) result);
-            set_addition_flags(result, BYTE);
             break;
         case REG_16BIT:
             result = REGS[HL] + REGS[operand];
+            set_addition_flags(result, REGS[HL], WORD);
             REGS[HL] = (uint16_t) result;
-            set_addition_flags(result, WORD);
             break;
         case CONST_8BIT:
-            result = read_8bit_reg(A) + operand;
+            result = accumulator + operand;
+            set_addition_flags(result, accumulator, BYTE);
             write_8bit_reg(A, (uint8_t) result);
-            set_addition_flags(result, BYTE);
-            break;
-        case CONST_16BIT:
-            result = REGS[HL] + operand;
-            REGS[HL] = (uint16_t) result;
-            set_addition_flags(result, WORD);
             break;
         case REG_POINTER:
-            result = read_8bit_reg(A) + read_memory(REGS[HL]);
+            result = accumulator + read_memory(REGS[HL]);
+            set_addition_flags(result, accumulator, BYTE);
             write_8bit_reg(A, (uint8_t) result);
-            set_addition_flags(result, BYTE);
             break;
         case OFFSET:
             result = REGS[SP] + (int8_t) operand;
+            set_addition_flags(result, REGS[SP], BYTE);
             REGS[SP] = result;
-            set_addition_flags(result, BYTE);
             break;
         default:
             perror("Invalid operand in add");
@@ -352,10 +351,11 @@ void add(uint16_t operand, uint8_t operand_type) {
  */
 void adc(uint8_t operand, uint8_t operand_type) {
     uint8_t carry_bit = CARRY_FLAG(read_8bit_reg(F));
+    uint8_t accumulator = read_8bit_reg(A);
     uint8_t source_val = get_8bit_operand(operand, operand_type);
-    uint16_t result = read_8bit_reg(A) + source_val + carry_bit;
+    uint16_t result = accumulator + source_val + carry_bit;
     write_8bit_reg(A, (uint8_t) result);
-    set_addition_flags((uint32_t) result, BYTE);
+    set_addition_flags((uint32_t) result, accumulator, BYTE);
 }
 
 /*
@@ -716,7 +716,7 @@ void sla(uint8_t source_reg, bool reg_8bit) {
 }
 
 /*
- * Source Right Arithmetically
+ * Shift Right Arithmetically
  * Shift bits in SOURCE_REG right arithmetically
  * Source reg is either 8-bit reg or byte pointed to by HL, indicated by REG_8BIT
  */
@@ -732,7 +732,7 @@ void sra(uint8_t source_reg, bool reg_8bit) {
 }
 
 /*
- * Source Right Logically
+ * Shit Right Logically
  * Shift bits in SOURCE_REG right logically
  * Source reg is either 8-bit reg or byte pointed to by HL, indicated by REG_8BIT
  */

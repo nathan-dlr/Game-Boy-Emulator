@@ -110,7 +110,7 @@ static void relative_jumps(uint8_t opcode) {
 static void load_immediate_add_16bit(uint8_t opcode) {
     uint8_t bit_three = GET_BIT_THREE(opcode);
     uint8_t bits_four_five = GET_BITS_FOUR_FIVE(opcode);
-    bit_three ? add(HL, REGISTER_PAIRS_DT[bits_four_five]) : ld(REGISTER_PAIRS_DT[bits_four_five], fetch_word(), REG_16BIT, CONST_16BIT);
+    bit_three ? add(REGISTER_PAIRS_DT[bits_four_five], REG_16BIT) : ld(REGISTER_PAIRS_DT[bits_four_five], fetch_word(), REG_16BIT, CONST_16BIT);
 }
 
 static void indirect_loading(uint8_t opcode) {
