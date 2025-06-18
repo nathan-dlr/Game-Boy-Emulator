@@ -62,11 +62,11 @@ void execute_next_instruction() {
            MEMORY[REGS[PC] + 2],
            MEMORY[REGS[PC] + 3]);
     fseek(log, 0, SEEK_END);
-    if (ftell(log) >= 0xF00000) {
+    if (ftell(log) >= 0x3000000) {
         fclose(log);
         exit(0);
     }
-    if (REGS[PC] == 0xc48c && REGS[AF] == 0x0080) {
+    if (REGS[PC] == 0xc7cc && REGS[AF] == 0xf8c0 && REGS[BC] == 0x00ff && REGS[DE] == 0xcb0c && REGS[HL] == 0x9000 && REGS[SP] == 0xdff5 && MEMORY[REGS[PC]] == 0xc6) {
         REGS[PC] += 0;
     }
     uint8_t next_byte = fetch_byte();
@@ -153,24 +153,44 @@ static void set_zero_flag(uint32_t result) {
 }
 
 /*
- * Uses the RESULT of an addition operation and the LENGTH of the operands to set flags
+ * Uses the RESULT of a byte addition operation and the PREVious value of the
+ * operation before it was performed to set flags
 */
-//TODO MAKE SEPERATE FUNCTION FOR WORD
-static void set_addition_flags(uint32_t result, uint16_t prev, bool length) {
-    if ((length == BYTE && ((result & 0x0F) < (prev & 0x0F))) || (length == WORD && ((result & 0x0F00) < (prev & 0x0F00)))) {
+//TODO TRY INSTEAD TO USE THE TWO OEPRANDS RATHER THAN THE RESULT AND THE PREVIOUS VALU
+///THIS WAY WE CAN JUST SEE IF TEH RESULT IS LARGER THAN WHAT'S POSSIBLE FROM UP UNTIL THE CARRY BIT
+static void set_byte_add_flags(uint8_t result, uint8_t prev) {
+    if ((result & 0xF0) > (prev & 0xF0)) {
         write_8bit_reg(F, SET_BIT(HALF_CARRY_BIT, read_8bit_reg(F)));
     }
     else {
         write_8bit_reg(F, CLEAR_BIT(HALF_CARRY_BIT, read_8bit_reg(F)));
     }
-    if ((length == BYTE && ((result & 0xF0) < (prev & 0xF0))) || (length == WORD && ((result & 0xF000) < (prev & 0xF000)))) {
+    if ((result & 0xF0) < (prev & 0xF0)) {
         write_8bit_reg(F, SET_BIT(CARRY_BIT, read_8bit_reg(F)));
     }
     else {
         write_8bit_reg(F, CLEAR_BIT(CARRY_BIT, read_8bit_reg(F)));
     }
-    if (length == BYTE) {
-        set_zero_flag((uint8_t) result);
+    set_zero_flag((uint8_t) result);
+    write_8bit_reg(F, CLEAR_BIT(NEGATIVE_BIT, read_8bit_reg(F)));
+}
+
+/*
+ * Uses the RESULT of a word addition operation and the PREVious value of the
+ * operation before it was performed to set flags
+*/
+static void set_word_add_flags(uint16_t result, uint16_t prev) {
+    if ((result & 0xF000) > (prev & 0xF000)) {
+        write_8bit_reg(F, SET_BIT(HALF_CARRY_BIT, read_8bit_reg(F)));
+    }
+    else {
+        write_8bit_reg(F, CLEAR_BIT(HALF_CARRY_BIT, read_8bit_reg(F)));
+    }
+    if ((result & 0xF000) < (prev & 0xF000)) {
+        write_8bit_reg(F, SET_BIT(CARRY_BIT, read_8bit_reg(F)));
+    }
+    else {
+        write_8bit_reg(F, CLEAR_BIT(CARRY_BIT, read_8bit_reg(F)));
     }
     write_8bit_reg(F, CLEAR_BIT(NEGATIVE_BIT, read_8bit_reg(F)));
 }
@@ -256,7 +276,13 @@ void ld(uint16_t dest, uint16_t source, uint8_t dest_type, uint8_t source_type) 
             REGS[dest] = source_val;
             return;
         case POINTER:
-            write_memory(dest, (uint8_t) source_val);
+            if (source_type == REG_8BIT) {
+                write_memory(dest, (uint8_t) source_val);
+            }
+            else {
+                write_memory(dest, (uint8_t) source_val & 0x00FF);
+                write_memory(dest + 1, (uint8_t) ((source_val & 0xFF00) >> 8));
+            }
             return;
         case REG_POINTER:
             write_memory(REGS[dest], (uint8_t) source_val);
@@ -298,7 +324,7 @@ void ld_inc(uint8_t action) {
 
 void ld_sp_off(int8_t offset) {
     REGS[HL] = REGS[SP] + offset;
-    set_addition_flags(REGS[HL], REGS[SP], WORD);
+    set_word_add_flags(REGS[HL], REGS[SP]);
 }
 
 ///////////////////////////////////////// ARITHMETIC INSTRUCTIONS  /////////////////////////////////////////
@@ -310,32 +336,32 @@ void ld_sp_off(int8_t offset) {
  * Zero, carry, and half-carry flags are set
  */
 void add(uint16_t operand, uint8_t operand_type) {
-    uint32_t result;
+    uint16_t result;
     uint8_t accumulator = read_8bit_reg(A);
     switch (operand_type) {
         case REG_8BIT:
             result = accumulator + read_8bit_reg(operand);
-            set_addition_flags(result, accumulator, BYTE);
+            set_byte_add_flags((uint8_t) result, accumulator);
             write_8bit_reg(A, (uint8_t) result);
             break;
         case REG_16BIT:
             result = REGS[HL] + REGS[operand];
-            set_addition_flags(result, REGS[HL], WORD);
-            REGS[HL] = (uint16_t) result;
+            set_word_add_flags(result, REGS[HL]);
+            REGS[HL] = result;
             break;
         case CONST_8BIT:
             result = accumulator + operand;
-            set_addition_flags(result, accumulator, BYTE);
+            set_byte_add_flags((uint8_t) result, accumulator);
             write_8bit_reg(A, (uint8_t) result);
             break;
         case REG_POINTER:
             result = accumulator + read_memory(REGS[HL]);
-            set_addition_flags(result, accumulator, BYTE);
+            set_byte_add_flags((uint8_t) result, accumulator);
             write_8bit_reg(A, (uint8_t) result);
             break;
         case OFFSET:
             result = REGS[SP] + (int8_t) operand;
-            set_addition_flags(result, REGS[SP], BYTE);
+            set_word_add_flags(result, REGS[SP]);
             REGS[SP] = result;
             break;
         default:
@@ -353,9 +379,9 @@ void adc(uint8_t operand, uint8_t operand_type) {
     uint8_t carry_bit = CARRY_FLAG(read_8bit_reg(F));
     uint8_t accumulator = read_8bit_reg(A);
     uint8_t source_val = get_8bit_operand(operand, operand_type);
-    uint16_t result = accumulator + source_val + carry_bit;
+    uint8_t result = accumulator + source_val + carry_bit;
     write_8bit_reg(A, (uint8_t) result);
-    set_addition_flags((uint32_t) result, accumulator, BYTE);
+    set_byte_add_flags(result, accumulator);
 }
 
 /*
@@ -947,24 +973,26 @@ void halt() {
 void daa() {
     uint8_t accumulator = read_8bit_reg(A);
     uint8_t flags = read_8bit_reg(F);
+    uint8_t adjustment = 0;
 
     if (SUBTRACTION_FLAG(flags)) {
         if (HALF_CARRY_FLAG(flags)) {
-            accumulator -= 0x06;
+            adjustment -= 0x06;
         }
         if (CARRY_FLAG(flags)) {
-            accumulator -= 0x60;
+            adjustment -= 0x60;
         }
     }
     else {
         if (HALF_CARRY_FLAG(flags) || ((accumulator & 0x0F) > 0x09)) {
-            accumulator += 0x06;
+            adjustment += 0x06;
         }
         if (CARRY_FLAG(flags) || (accumulator > 0x99)) {
-            accumulator += 0x60;
+            adjustment += 0x60;
             write_8bit_reg(F, SET_BIT(CARRY_BIT, flags));
         }
     }
+    accumulator += adjustment;
     write_8bit_reg(A, accumulator);
     set_zero_flag(accumulator);
     write_8bit_reg(F, CLEAR_BIT(HALF_CARRY_BIT, read_8bit_reg(F)));
