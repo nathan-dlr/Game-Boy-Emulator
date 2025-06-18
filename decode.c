@@ -93,10 +93,10 @@ static void relative_jumps(uint8_t opcode) {
             nop(opcode);
             return;
         case 1:
-            stop();
+            ld(fetch_word(), SP, POINTER, REG_16BIT);
             return;
         case 2:
-            ld(fetch_word(), SP, POINTER, REG_16BIT);
+            stop();
             return;
         case 3:
             jr(NONE);

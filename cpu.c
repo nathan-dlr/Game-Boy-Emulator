@@ -62,11 +62,11 @@ void execute_next_instruction() {
            MEMORY[REGS[PC] + 2],
            MEMORY[REGS[PC] + 3]);
     fseek(log, 0, SEEK_END);
-    if (ftell(log) >= 0x3000000) {
+    if (ftell(log) >= 0x4000000) {
         fclose(log);
         exit(0);
     }
-    if (REGS[PC] == 0xc7cc && REGS[AF] == 0xf8c0 && REGS[BC] == 0x00ff && REGS[DE] == 0xcb0c && REGS[HL] == 0x9000 && REGS[SP] == 0xdff5 && MEMORY[REGS[PC]] == 0xc6) {
+    if (REGS[PC] == 0xdef8 && REGS[AF] == 0x1200 && REGS[BC] == 0x5691 && REGS[DE] == 0x9abc && REGS[HL] == 0x0000 && REGS[SP] == 0x000F && MEMORY[REGS[PC]] == 0xE8) {
         REGS[PC] += 0;
     }
     uint8_t next_byte = fetch_byte();
@@ -156,16 +156,14 @@ static void set_zero_flag(uint32_t result) {
  * Uses the RESULT of a byte addition operation and the PREVious value of the
  * operation before it was performed to set flags
 */
-//TODO TRY INSTEAD TO USE THE TWO OEPRANDS RATHER THAN THE RESULT AND THE PREVIOUS VALU
-///THIS WAY WE CAN JUST SEE IF TEH RESULT IS LARGER THAN WHAT'S POSSIBLE FROM UP UNTIL THE CARRY BIT
-static void set_byte_add_flags(uint8_t result, uint8_t prev) {
-    if ((result & 0xF0) > (prev & 0xF0)) {
+static void set_add_flags_byte(uint8_t result, uint8_t prev) {
+    if ((result & 0x0F) < (prev & 0x0F)) {
         write_8bit_reg(F, SET_BIT(HALF_CARRY_BIT, read_8bit_reg(F)));
     }
     else {
         write_8bit_reg(F, CLEAR_BIT(HALF_CARRY_BIT, read_8bit_reg(F)));
     }
-    if ((result & 0xF0) < (prev & 0xF0)) {
+    if (result < prev) {
         write_8bit_reg(F, SET_BIT(CARRY_BIT, read_8bit_reg(F)));
     }
     else {
@@ -179,14 +177,14 @@ static void set_byte_add_flags(uint8_t result, uint8_t prev) {
  * Uses the RESULT of a word addition operation and the PREVious value of the
  * operation before it was performed to set flags
 */
-static void set_word_add_flags(uint16_t result, uint16_t prev) {
-    if ((result & 0xF000) > (prev & 0xF000)) {
+static void set_add_flags_word(uint16_t result, uint16_t prev) {
+    if ((result & 0x0FFF) < (prev & 0x0FFF)) {
         write_8bit_reg(F, SET_BIT(HALF_CARRY_BIT, read_8bit_reg(F)));
     }
     else {
         write_8bit_reg(F, CLEAR_BIT(HALF_CARRY_BIT, read_8bit_reg(F)));
     }
-    if ((result & 0xF000) < (prev & 0xF000)) {
+    if (result < prev) {
         write_8bit_reg(F, SET_BIT(CARRY_BIT, read_8bit_reg(F)));
     }
     else {
@@ -324,7 +322,7 @@ void ld_inc(uint8_t action) {
 
 void ld_sp_off(int8_t offset) {
     REGS[HL] = REGS[SP] + offset;
-    set_word_add_flags(REGS[HL], REGS[SP]);
+    set_add_flags_word(REGS[HL], REGS[SP]);
 }
 
 ///////////////////////////////////////// ARITHMETIC INSTRUCTIONS  /////////////////////////////////////////
@@ -341,27 +339,28 @@ void add(uint16_t operand, uint8_t operand_type) {
     switch (operand_type) {
         case REG_8BIT:
             result = accumulator + read_8bit_reg(operand);
-            set_byte_add_flags((uint8_t) result, accumulator);
+            set_add_flags_byte((uint8_t) result, accumulator);
             write_8bit_reg(A, (uint8_t) result);
             break;
         case REG_16BIT:
             result = REGS[HL] + REGS[operand];
-            set_word_add_flags(result, REGS[HL]);
+            set_add_flags_word(result, REGS[HL]);
             REGS[HL] = result;
             break;
         case CONST_8BIT:
             result = accumulator + operand;
-            set_byte_add_flags((uint8_t) result, accumulator);
+            set_add_flags_byte((uint8_t) result, accumulator);
             write_8bit_reg(A, (uint8_t) result);
             break;
         case REG_POINTER:
             result = accumulator + read_memory(REGS[HL]);
-            set_byte_add_flags((uint8_t) result, accumulator);
+            set_add_flags_byte((uint8_t) result, accumulator);
             write_8bit_reg(A, (uint8_t) result);
             break;
         case OFFSET:
             result = REGS[SP] + (int8_t) operand;
-            set_word_add_flags(result, REGS[SP]);
+            set_add_flags_byte(result, REGS[SP]);
+            write_8bit_reg(F, CLEAR_BIT(ZERO_BIT, read_8bit_reg(F)));
             REGS[SP] = result;
             break;
         default:
@@ -381,7 +380,7 @@ void adc(uint8_t operand, uint8_t operand_type) {
     uint8_t source_val = get_8bit_operand(operand, operand_type);
     uint8_t result = accumulator + source_val + carry_bit;
     write_8bit_reg(A, (uint8_t) result);
-    set_byte_add_flags(result, accumulator);
+    set_add_flags_byte(result, accumulator);
 }
 
 /*
