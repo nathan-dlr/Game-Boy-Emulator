@@ -44,7 +44,6 @@ void cpu_init() {
 }
 
 static uint8_t read_8bit_reg(uint8_t reg);
-//if e and a are not the same the test fails
 void execute_next_instruction() {
     fprintf(log, "A:%02X F:%02X B:%02X C:%02X D:%02X E:%02X H:%02X L:%02X SP:%04X PC:%04X PCMEM:%02X,%02X,%02X,%02X\n",
            read_8bit_reg(A),
@@ -62,11 +61,11 @@ void execute_next_instruction() {
            MEMORY[REGS[PC] + 2],
            MEMORY[REGS[PC] + 3]);
     fseek(log, 0, SEEK_END);
-    if (ftell(log) >= 0x4000000) {
+    if (ftell(log) >= 0x5000000) {
         fclose(log);
         exit(0);
     }
-    if (REGS[PC] == 0xdef8 && REGS[AF] == 0x1200 && REGS[BC] == 0x5691 && REGS[DE] == 0x9abc && REGS[HL] == 0x0000 && REGS[SP] == 0x000F && MEMORY[REGS[PC]] == 0xE8) {
+    if (REGS[PC] == 0xDEF8 && REGS[AF] == 0x0f10 && REGS[HL] == 0xDEF4 && REGS[SP] == 0xDFF1 && MEMORY[REGS[PC]] == 0xCE && MEMORY[REGS[PC] + 1] == 0x00) {
         REGS[PC] += 0;
     }
     uint8_t next_byte = fetch_byte();
@@ -322,7 +321,8 @@ void ld_inc(uint8_t action) {
 
 void ld_sp_off(int8_t offset) {
     REGS[HL] = REGS[SP] + offset;
-    set_add_flags_word(REGS[HL], REGS[SP]);
+    set_add_flags_byte(REGS[HL], REGS[SP]);
+    write_8bit_reg(F, CLEAR_BIT(ZERO_BIT, read_8bit_reg(F)));
 }
 
 ///////////////////////////////////////// ARITHMETIC INSTRUCTIONS  /////////////////////////////////////////
@@ -378,7 +378,8 @@ void adc(uint8_t operand, uint8_t operand_type) {
     uint8_t carry_bit = CARRY_FLAG(read_8bit_reg(F));
     uint8_t accumulator = read_8bit_reg(A);
     uint8_t source_val = get_8bit_operand(operand, operand_type);
-    uint8_t result = accumulator + source_val + carry_bit;
+    uint8_t intermediate = source_val + carry_bit;
+    uint8_t result = accumulator + intermediate;
     write_8bit_reg(A, (uint8_t) result);
     set_add_flags_byte(result, accumulator);
 }
