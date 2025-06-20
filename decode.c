@@ -341,7 +341,7 @@ static void assorted_ops(uint8_t opcode) {
 static void conditional_calls(uint8_t opcode) {
     uint8_t second_octal_dig = GET_SECOND_OCTAL_DIGIT(opcode);
     //instructions whose opcode's second octal digit are 4-7 are usually implemented in the Z80 but not on the gbz80
-    second_octal_dig < 3 ? call(CC[second_octal_dig], fetch_word()) : nop(opcode);
+    second_octal_dig < 4 ? call(CC[second_octal_dig], fetch_word()) : nop(opcode);
 }
 
 static void push_call_nop(uint8_t opcode) {

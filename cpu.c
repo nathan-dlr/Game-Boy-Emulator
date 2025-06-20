@@ -66,7 +66,7 @@ void execute_next_instruction() {
         fclose(log);
         exit(0);
     }
-    if (REGS[PC] == 0xdef8 && MEMORY[REGS[PC]] == 0xde && MEMORY[REGS[PC] + 1] == 0x0f && REGS[AF] == 0x0010) {
+    if (REGS[PC] == 0xdef8 && MEMORY[REGS[PC]] == 0xdc && MEMORY[REGS[PC] + 1] == 0x7d && REGS[AF] == 0x1200) {
         REGS[PC] += 0;
     }
     uint8_t next_byte = fetch_byte();
@@ -868,8 +868,11 @@ void reti() {
  */
 void rst(uint8_t opcode) {
     uint8_t vec = (opcode & 0x38 >> 3) * 8;
-    write_memory(REGS[SP], PC + 2);
-    REGS[SP] += 2;
+    
+    REGS[SP]--;
+    write_memory(REGS[SP], (uint8_t) ((REGS[PC] & 0xFF00) >> 8));
+    REGS[SP]--;
+    write_memory(REGS[SP], (uint8_t) (REGS[PC] & 0x00FF));
     REGS[PC] = vec;
 
 }
