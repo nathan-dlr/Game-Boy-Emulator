@@ -29,7 +29,6 @@ static uint16_t REGS[6];
 /* Interrupt Master Enable Flag */
 static bool IME = false;
 static uint8_t CPU_STATE;
-static FILE* log;
 
 
 void cpu_init() {
@@ -40,36 +39,10 @@ void cpu_init() {
     REGS[SP] = 0xFFFE;
     REGS[PC] = 0x0100;
     CPU_STATE = RUNNING;
-    log =  fopen("logfile", "w");
 }
 
 static uint8_t read_8bit_reg(uint8_t reg);
 void execute_next_instruction() {
-    fprintf(log, "A:%02X F:%02X B:%02X C:%02X D:%02X E:%02X H:%02X L:%02X SP:%04X PC:%04X PCMEM:%02X,%02X,%02X,%02X\n",
-           read_8bit_reg(A),
-           read_8bit_reg(F),
-           read_8bit_reg(B),
-           read_8bit_reg(C),
-           read_8bit_reg(D),
-           read_8bit_reg(E),
-           read_8bit_reg(H),
-           read_8bit_reg(L),
-           REGS[SP],
-           REGS[PC],
-           MEMORY[REGS[PC]],
-           MEMORY[REGS[PC] + 1],
-           MEMORY[REGS[PC] + 2],
-           MEMORY[REGS[PC] + 3]);
-    fseek(log, 0, SEEK_END);
-
-    if (ftell(log) >= 0x16000000) {
-        fclose(log);
-        exit(0);
-    }
-    if (REGS[PC] == 0xc06c && MEMORY[REGS[PC]] == 0xcb && MEMORY[REGS[PC] + 1] == 0x19 &&  MEMORY[REGS[PC] + 2] == 0xcb && REGS[AF] == 0x4900 && REGS[BC] == 0x429b) {
-        REGS[PC] += 0;
-    }
-
     uint8_t next_byte = fetch_byte();
     decode(next_byte);
 }
@@ -265,7 +238,7 @@ void ld(uint16_t dest, uint16_t source, uint8_t dest_type, uint8_t source_type) 
             write_memory(0xFF00 + dest, (uint8_t) source_val);
             return;
         case REG_OFFSET:
-            write_memory(0xFF00 + REGS[dest], (uint8_t) source_val);
+            write_memory(0xFF00 + read_8bit_reg(C), (uint8_t) source_val);
             return;
         default:
             perror("Invalid operand in load");
@@ -600,7 +573,7 @@ void set(uint8_t bit_num, uint8_t source_reg, bool reg_8bit) {
  */
 void rl(uint8_t source_reg, bool reg_8bit) {
     uint8_t source_val = reg_8bit ? read_8bit_reg(source_reg) : read_memory(REGS[HL]);
-    uint8_t carry_flag_old = CARRY_FLAG(source_val) ? 0x01 : 0x00;
+    uint8_t carry_flag_old = CARRY_FLAG(read_8bit_reg(F)) ? 0x01 : 0x00;
     bool carry_flag_new = source_val & 0x80 ? true : false;
     uint8_t new_val = (source_val << 1) | carry_flag_old;
 
