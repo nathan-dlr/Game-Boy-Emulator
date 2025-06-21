@@ -57,6 +57,8 @@
 #define SVBK 0xFF70
 #define IE 0xFFFF
 
+
+uint16_t get_debug_pc();
 void cpu_init();
 uint8_t fetch_byte();
 uint16_t fetch_word();
@@ -104,9 +106,9 @@ void ei();
 void pop(uint8_t reg_16);
 void push(uint8_t reg_16);
 void rst(uint8_t opcode);
-void bit(uint8_t bit, uint8_t source_reg, bool reg_8bit);
-void res(uint8_t bit, uint8_t source_reg, bool reg_8bit);
-void set(uint8_t bit, uint8_t source_reg, bool reg_8bit);
+void bit(uint8_t bit_num, uint8_t source_reg, bool reg_8bit);
+void res(uint8_t bit_num, uint8_t source_reg, bool reg_8bit);
+void set(uint8_t bit_num, uint8_t source_reg, bool reg_8bit);
 
 enum REGISTERS_16BIT {
     AF,

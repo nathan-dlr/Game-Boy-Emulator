@@ -18,7 +18,6 @@
 #define BYTE 0
 #define WORD 1
 #define FIRST_NIBBLE(x) (x & 0x000F)
-#define SECOND_NIBBLE(x) (x & 0x00F0)
 
 /* Interrupt Enable and Interrupt Flag */
 #define IE 0xFFFF
@@ -62,13 +61,15 @@ void execute_next_instruction() {
            MEMORY[REGS[PC] + 2],
            MEMORY[REGS[PC] + 3]);
     fseek(log, 0, SEEK_END);
-    if (ftell(log) >= 0x5000000) {
+
+    if (ftell(log) >= 0x16000000) {
         fclose(log);
         exit(0);
     }
-    if (REGS[PC] == 0xdef8 && MEMORY[REGS[PC]] == 0xdc && MEMORY[REGS[PC] + 1] == 0x7d && REGS[AF] == 0x1200) {
+    if (REGS[PC] == 0xc06c && MEMORY[REGS[PC]] == 0xcb && MEMORY[REGS[PC] + 1] == 0x19 &&  MEMORY[REGS[PC] + 2] == 0xcb && REGS[AF] == 0x4900 && REGS[BC] == 0x429b) {
         REGS[PC] += 0;
     }
+
     uint8_t next_byte = fetch_byte();
     decode(next_byte);
 }
@@ -199,7 +200,7 @@ static uint8_t get_subtraction_flags(uint8_t minuend, uint8_t subtrahend) {
  * SET_ZERO signals weather to test for zero or to clear zero flag
  * CARRY_FLAG_NEW will indicate weather to set or clear the carry flag
  */
-static uint8_t get_rot_flags(uint8_t result, bool set_zero, uint8_t carry_flag_new) {
+static uint8_t get_rot_flags(uint8_t result, bool set_zero, bool carry_flag_new) {
     uint8_t flags = 0x00;
     if (set_zero) {
         flags |= get_zero_flag((uint32_t) result);
@@ -234,7 +235,7 @@ void ld(uint16_t dest, uint16_t source, uint8_t dest_type, uint8_t source_type) 
             source_val = (uint16_t) read_memory(0xFF00 + source);
             break;
         case REG_OFFSET:
-            source_val = (uint16_t) read_memory(0xFF00 + REGS[source]);
+            source_val = (uint16_t) read_memory(0xFF00 + read_8bit_reg(C));
             break;
         //source is 16 or 8 bit constant
         default:
@@ -316,7 +317,7 @@ void add(uint16_t operand, uint8_t operand_type) {
         case REG_8BIT:
             result = accumulator + read_8bit_reg(operand);
             new_flags = get_add_flags_byte((uint8_t) result, accumulator);
-            new_flags |= get_zero_flag(result);
+            new_flags |= get_zero_flag((uint8_t) result);
             write_8bit_reg(A, (uint8_t) result);
             break;
         case REG_16BIT:
@@ -547,25 +548,26 @@ void cpl() {
  * Tests if BIT in SOURCE_REG is set, sets the zero flag if not set
  * Source reg is either 8-bit reg or byte pointed to by HL, indicated by REG_8BIT
  */
-void bit(uint8_t bit, uint8_t source_reg, bool reg_8bit) {
+void bit(uint8_t bit_num, uint8_t source_reg, bool reg_8bit) {
     uint8_t source_val = reg_8bit ? read_8bit_reg(source_reg) : read_memory(REGS[HL]);
-    bool set = source_val & (0x0001 << bit);
+    bool set = source_val & (0x0001 << bit_num);
 
     uint8_t flags = CARRY_FLAG(read_8bit_reg(F)) | HALF_CARRY_BIT;
-    if (set) {
+    if (!set) {
         flags |= ZERO_BIT;
     }
     write_8bit_reg(F, flags);
 }
 
 /*
- * Reset (clear) bit instruction
+ * Reset (clear) bit_num instruction
  * Clears BIT in SOURCE_REG
- * Source reg is either 8-bit reg or byte pointed to by HL, indicated by REG_8BIT
+ * Source reg is either 8-bit_num reg or byte pointed to by HL, indicated by REG_8BIT
  */
-void res(uint8_t bit, uint8_t source_reg, bool reg_8bit) {
+void res(uint8_t bit_num, uint8_t source_reg, bool reg_8bit) {
+    uint8_t bit = 0x01 << bit_num;
     if (reg_8bit) {
-        write_8bit_reg(source_reg, CLEAR_BIT(bit, source_reg));
+        write_8bit_reg(source_reg, CLEAR_BIT(bit, read_8bit_reg(source_reg)));
     }
     else {
         write_memory(REGS[HL], CLEAR_BIT(bit, read_memory(REGS[HL])));
@@ -579,9 +581,10 @@ void res(uint8_t bit, uint8_t source_reg, bool reg_8bit) {
  * Sets BIT in SOURCE_REG
  * Source reg is either 8-bit reg or byte pointed to by HL, indicated by REG_8BIT
  */
-void set(uint8_t bit, uint8_t source_reg, bool reg_8bit) {
+void set(uint8_t bit_num, uint8_t source_reg, bool reg_8bit) {
+    uint8_t bit = 0x01 << bit_num;
     if (reg_8bit) {
-        write_8bit_reg(source_reg, SET_BIT(bit, source_reg));
+        write_8bit_reg(source_reg, SET_BIT(bit, read_8bit_reg(source_reg)));
     }
     else {
         write_memory(REGS[HL], SET_BIT(bit, read_memory(REGS[HL])));
@@ -596,12 +599,12 @@ void set(uint8_t bit, uint8_t source_reg, bool reg_8bit) {
  * Source reg is either 8-bit reg or byte pointed to by HL, indicated by REG_8BIT
  */
 void rl(uint8_t source_reg, bool reg_8bit) {
-    uint8_t carry_flag_old = CARRY_FLAG(read_8bit_reg(F)) ? 0x01 : 0x00;
-    uint8_t source_val = read_8bit_reg(source_reg);
-    uint8_t carry_flag_new = source_val & 0x80 ? 1 : 0;
+    uint8_t source_val = reg_8bit ? read_8bit_reg(source_reg) : read_memory(REGS[HL]);
+    uint8_t carry_flag_old = CARRY_FLAG(source_val) ? 0x01 : 0x00;
+    bool carry_flag_new = source_val & 0x80 ? true : false;
     uint8_t new_val = (source_val << 1) | carry_flag_old;
-    reg_8bit ? write_8bit_reg(source_reg, new_val) : write_memory(REGS[HL], new_val);
 
+    reg_8bit ? write_8bit_reg(source_reg, new_val) : write_memory(REGS[HL], new_val);
     write_8bit_reg(F, get_rot_flags(new_val, true, carry_flag_new));
 }
 
@@ -613,10 +616,10 @@ void rl(uint8_t source_reg, bool reg_8bit) {
 void rla() {
     uint8_t carry_flag_old = CARRY_FLAG(read_8bit_reg(F)) ? 0x01 : 0x00;
     uint8_t source_val = read_8bit_reg(A);
-    uint8_t carry_flag_new = source_val & 0x80 ? 1 : 0;
+    bool carry_flag_new = source_val & 0x80 ? true : false;
     uint8_t new_val = (source_val << 1) | carry_flag_old;
-    write_8bit_reg(A, new_val);
 
+    write_8bit_reg(A, new_val);
     write_8bit_reg(F, get_rot_flags(new_val, false, carry_flag_new));
 }
 
@@ -627,10 +630,11 @@ void rla() {
  */
 void rlc(uint8_t source_reg, bool reg_8bit) {
     uint8_t source_val = reg_8bit ? read_8bit_reg(source_reg) : read_memory(REGS[HL]);
-    uint8_t carry_flag_new = source_val & 0x80 ? 1 : 0;
-    uint8_t new_val = (source_val << 1) | carry_flag_new;
-    reg_8bit ? write_8bit_reg(source_reg, new_val) : write_memory(REGS[HL], new_val);
+    bool carry_flag_new = source_val & 0x80 ? true : false;
+    uint8_t new_val = source_val << 1;
+    new_val |= carry_flag_new ? 0x01 : 0x00;
 
+    reg_8bit ? write_8bit_reg(source_reg, new_val) : write_memory(REGS[HL], new_val);
     write_8bit_reg(F, get_rot_flags(new_val, true, carry_flag_new));
 }
 
@@ -640,10 +644,11 @@ void rlc(uint8_t source_reg, bool reg_8bit) {
  */
 void rlca() {
     uint8_t source_val = read_8bit_reg(A);
-    uint8_t carry_flag_new = source_val & 0x80 ? 1 : 0;
-    uint8_t new_val = (source_val << 1) | carry_flag_new;
-    write_8bit_reg(A, new_val);
+    bool carry_flag_new = source_val & 0x80 ? true : false;
+    uint8_t new_val = source_val << 1;
+    new_val |= carry_flag_new ? 0x01 : 0x00;
 
+    write_8bit_reg(A, new_val);
     write_8bit_reg(F, get_rot_flags(new_val, false, carry_flag_new));
 }
 
@@ -653,13 +658,13 @@ void rlca() {
  * Source reg is either 8-bit reg or byte pointed to by HL, indicated by REG_8BIT
  */
 void rr(uint8_t source_reg, bool reg_8bit) {
-    uint8_t carry_flag_old = CARRY_FLAG(read_8bit_reg(F)) ? 0x01 : 0x00;
     uint8_t source_val = reg_8bit ? read_8bit_reg(source_reg) : read_memory(REGS[HL]);
-    uint8_t carry_flag_new = source_val & 0x01 ? 1 : 0;
+    uint8_t carry_flag_old = CARRY_FLAG(read_8bit_reg(F)) ? 0x01 : 0x00;
+    bool carry_flag_new = source_val & 0x01 ? true : false;
     uint8_t new_val = (source_val >> 1);
     new_val |= carry_flag_old << 7;
-    reg_8bit ? write_8bit_reg(source_reg, new_val) : write_memory(REGS[HL], new_val);
 
+    reg_8bit ? write_8bit_reg(source_reg, new_val) : write_memory(REGS[HL], new_val);
     write_8bit_reg(F, get_rot_flags(new_val, true, carry_flag_new));
 }
 
@@ -671,11 +676,11 @@ void rr(uint8_t source_reg, bool reg_8bit) {
 void rra() {
     uint8_t carry_flag_old = CARRY_FLAG(read_8bit_reg(F)) ? 0x01 : 0x00;
     uint8_t source_val = read_8bit_reg(A);
-    uint8_t carry_flag_new = source_val & 0x01 ? 1 : 0;
+    bool carry_flag_new = source_val & 0x01 ? true : false;
     uint8_t new_val = (source_val >> 1);
     new_val |= carry_flag_old << 7;
-    write_8bit_reg(A, new_val);
 
+    write_8bit_reg(A, new_val);
     write_8bit_reg(F, get_rot_flags(new_val, false, carry_flag_new));
 }
 
@@ -686,12 +691,12 @@ void rra() {
  */
 void rrc(uint8_t source_reg, bool reg_8bit) {
     uint8_t source_val = reg_8bit ? read_8bit_reg(source_reg) : read_memory(REGS[HL]);
-    uint8_t carry_flag_new = source_val & 0x01 ? 1 : 0;
+    bool carry_flag_new = source_val & 0x01 ? true : false;
     uint8_t new_msb = source_val & 0x0001;
     uint8_t new_val = (source_val >> 1);
     new_val |= new_msb << 7;
-    reg_8bit ? write_8bit_reg(source_reg, new_val) : write_memory(REGS[HL], new_val);
 
+    reg_8bit ? write_8bit_reg(source_reg, new_val) : write_memory(REGS[HL], new_val);
     write_8bit_reg(F, get_rot_flags(new_val, true, carry_flag_new));
 }
 
@@ -701,12 +706,12 @@ void rrc(uint8_t source_reg, bool reg_8bit) {
  */
 void rrca() {
     uint8_t source_val = read_8bit_reg(A);
-    uint8_t carry_flag_new = source_val & 0x01 ? 1 : 0;
+    bool carry_flag_new = source_val & 0x01 ? true : false;
     uint8_t new_msb = source_val & 0x01;
     uint8_t new_val = (source_val >> 1);
     new_val |= new_msb << 7;
-    write_8bit_reg(A, new_val);
 
+    write_8bit_reg(A, new_val);
     write_8bit_reg(F, get_rot_flags(new_val, false, carry_flag_new));
 }
 
@@ -717,10 +722,10 @@ void rrca() {
  */
 void sla(uint8_t source_reg, bool reg_8bit) {
     uint8_t source_val = reg_8bit ? read_8bit_reg(source_reg) : read_memory(REGS[HL]);
-    uint8_t carry_flag_new = source_val & 0x80 ? 1 : 0;
+    bool carry_flag_new = source_val & 0x80 ? true : false;
     uint8_t new_val = source_val << 1;
-    reg_8bit ? write_8bit_reg(source_reg, new_val) : write_memory(REGS[HL], new_val);
 
+    reg_8bit ? write_8bit_reg(source_reg, new_val) : write_memory(REGS[HL], new_val);
     write_8bit_reg(F, get_rot_flags(new_val, true, carry_flag_new));
 }
 
@@ -731,13 +736,13 @@ void sla(uint8_t source_reg, bool reg_8bit) {
  */
 void sra(uint8_t source_reg, bool reg_8bit) {
     uint8_t source_val = reg_8bit ? read_8bit_reg(source_reg) : read_memory(REGS[HL]);
-    uint8_t carry_flag_new = source_val & 0x01 ? 1 : 0;
+    bool carry_flag_new = source_val & 0x01 ? true : false;
     uint8_t new_msb = source_val & 0x80;
     uint8_t new_val = source_val >> 1;
     new_val |= new_msb;
-    reg_8bit ? write_8bit_reg(source_reg, new_val) : write_memory(REGS[HL], new_val);
 
-    write_8bit_reg(F, get_rot_flags(new_val, false, carry_flag_new));
+    reg_8bit ? write_8bit_reg(source_reg, new_val) : write_memory(REGS[HL], new_val);
+    write_8bit_reg(F, get_rot_flags(new_val, true, carry_flag_new));
 }
 
 /*
@@ -747,10 +752,10 @@ void sra(uint8_t source_reg, bool reg_8bit) {
  */
 void srl(uint8_t source_reg, bool reg_8bit) {
     uint8_t source_val = reg_8bit ? read_8bit_reg(source_reg) : read_memory(REGS[HL]);
-    uint8_t carry_flag_new = source_val & 0x01 ? 1 : 0;
+    bool carry_flag_new = source_val & 0x01 ? true : false;
     uint8_t new_val = source_val >> 1;
-    reg_8bit ? write_8bit_reg(source_reg, new_val) : write_memory(REGS[HL], new_val);
 
+    reg_8bit ? write_8bit_reg(source_reg, new_val) : write_memory(REGS[HL], new_val);
     write_8bit_reg(F, get_rot_flags(new_val, true, carry_flag_new));
 }
 
@@ -762,8 +767,8 @@ void srl(uint8_t source_reg, bool reg_8bit) {
 void swap(uint8_t source_reg, bool reg_8bit) {
     uint8_t source_val = reg_8bit ? read_8bit_reg(source_reg) : read_memory(REGS[HL]);
     uint8_t new_val = ((source_val & 0x0F) << 4) | ((source_val & 0xF0) >> 4);
-    reg_8bit ? write_8bit_reg(source_reg, new_val) : write_memory(REGS[HL], new_val);
 
+    reg_8bit ? write_8bit_reg(source_reg, new_val) : write_memory(REGS[HL], new_val);
     write_8bit_reg(F, get_zero_flag((uint32_t) new_val));
 }
 
@@ -868,7 +873,7 @@ void reti() {
  */
 void rst(uint8_t opcode) {
     uint8_t vec = (opcode & 0x38 >> 3) * 8;
-    
+
     REGS[SP]--;
     write_memory(REGS[SP], (uint8_t) ((REGS[PC] & 0xFF00) >> 8));
     REGS[SP]--;
@@ -884,7 +889,7 @@ void rst(uint8_t opcode) {
  */
 void ccf() {
     uint8_t flags = read_8bit_reg(F);
-    flags = (flags ^ CARRY_BIT) | ZERO_FLAG(flags);
+    flags = (CARRY_FLAG(flags) ^ CARRY_BIT) | ZERO_FLAG(flags);
     write_8bit_reg(F, flags);
 }
 
