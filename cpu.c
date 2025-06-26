@@ -28,7 +28,15 @@ static uint16_t REGS[6];
 
 /* Interrupt Master Enable Flag */
 static bool IME = false;
-static uint8_t CPU_STATE;
+static uint8_t CPU_STATE_temp;
+
+//TODO CReate a MEMORY DATA REGISTER and MEMORY ADDRESS REGISTER? not actually in gameboy but would be useful in transferring data between ticks
+//TODO QUEUE FUNCTION X TIMES WHERE X = #CYLCLES, EACH FUNCTION WILL DO WORK BAsED ON A SWITCH STATEMENT CASE 0 - DO CYCLE 1 WORK, CASE 1 - DO CYCLE 2 WORK
+//TODO some parameters take in a enum but the parameter type is uint8t, change to the actual enum type
+//BUT HOW DO WE KEEP THE INFORMATION - static variables are ugly and bad - STORE ON THE BUS!!!!
+//theres an address bus and a data bus
+//COULD WE CREATE A OPERAND
+//INSTRUCTION CYCLES COULD BE KEPT TRACK OF IN CPU STATE
 
 
 void cpu_init() {
@@ -38,10 +46,11 @@ void cpu_init() {
     REGS[HL] = 0x014D;
     REGS[SP] = 0xFFFE;
     REGS[PC] = 0x0100;
-    CPU_STATE = RUNNING;
+    CPU_STATE_temp = RUNNING;
 }
 
-static uint8_t read_8bit_reg(uint8_t reg);
+//this will change to tick function
+//if decode we queue up more
 void execute_next_instruction() {
     uint8_t next_byte = fetch_byte();
     decode(next_byte);
@@ -49,7 +58,7 @@ void execute_next_instruction() {
 
 ///////////////////////////////////////// GENERAL HELPER FUNCTIONS /////////////////////////////////////////
 
-static void write_8bit_reg(uint8_t reg, uint8_t val) {
+void write_8bit_reg(uint8_t reg, uint8_t val) {
     uint8_t index;
     if (reg % 2 == 0) {
         index = reg / 2;
@@ -61,7 +70,7 @@ static void write_8bit_reg(uint8_t reg, uint8_t val) {
     }
 }
 
-static uint8_t read_8bit_reg(uint8_t reg) {
+uint8_t read_8bit_reg(uint8_t reg) {
     if (reg % 2 == 0) {
         return (REGS[reg / 2] & 0xFF00) >> 8;
     }
@@ -77,6 +86,15 @@ uint8_t fetch_byte() {
     uint8_t byte = read_memory(REGS[PC]);
     REGS[PC] += 0x0001;
     return byte;
+}
+
+/*
+ * Puts PC onto address bus and reads that byte onto the data bus
+ */
+uint8_t read_next_byte() {
+    CPU.ADDRESS_BUS = CPU.REGS[PC];
+    read_memory2();
+    CPU.REGS[PC]++;
 }
 
 /*
@@ -184,94 +202,72 @@ static uint8_t get_rot_flags(uint8_t result, bool set_zero, bool carry_flag_new)
     return flags;
 }
 
+//LD r8,r8 - 1 cycle: decode/ld_r8_bus
+//LD r8,n8 - 2 cycles: decode -> ld_r8_imm
+//LD r16,n16 - 3 cycles: decode -> ld_r8_imm -> ld_r8_imm
+//LD [HL],r8 - 2 cycles: decode -> write_memory
+//LD [HL],n8 - 3 cycles: decode -> read_next_byte -> write_bus
+//LD r8,[HL] - 2 cycles: decode -> ld_r8_addr_bus
+// LD [r16],A - 2 cycles: decode -> write_memory
+//LD [n16],A - 4 cycles: decode -> read_next_byte -> read_next_byte -> write_memory
+//LDH [n16],A - 3 cycles: decode -> read_next_byte -> write_memory
+//LDH [C],A - 2 cycles: decode -> write_memory
+//LD A,[r16] - 2 cycles: decode -> read_memory/ld_r8_bus
+//LD A,[n16] - 4 cycles: decode -> read_next_byte -> read_next_byte -> read_memory/ld_r8_bus
+//LDH A,[n16] - 3 cycles: decode -> read_next_byte -> read_memory/ld_r8_bus
+//LDH A,[C] - 2 cycles: decode -> read_memory/ld_r8_bus
+//LD [HLI],A - 2 cycles: decode -> write_memory
+//LD [HLD],A - 2 cycles: decode -> write_memory
+//LD A,[HLI] - 2 cycles: decode -> read_memory/ld_r8_bus
+//LD A,[HLD] - 2 cycles: decode -> read_memory/ld_r8_bus
+//LD SP,n16 - 3 cycles: decode -> read_next_byte/ld_r8_bus -> read_next_byte/ld_r8_bus
+//LD [n16],SP - 5 cycles: decode -> read_next_byte -> read_next_byte -> write_memory -> write_memory
+//LD HL,SP+e8 - 3 cycles: decode -> read_next_byte -> add to low byte of sp and store in L -> add any carry from low byte add and store in H
+//LD SP,HL - 2 cycles : decode -> ld_sp_hl
 
-/*
- * Loads SOURCE into DEST
- * Operand types are describes by DEST_TYPE and SOURCE_TYPE
-*/
-void ld(uint16_t dest, uint16_t source, uint8_t dest_type, uint8_t source_type) {
-    uint16_t source_val = 0;
-    switch (source_type) {
-        case REG_8BIT:
-            source_val = (uint16_t) read_8bit_reg(source);
-            break;
-        case REG_16BIT:
-            source_val = REGS[source];
-            break;
-        case POINTER:
-            source_val = (uint16_t) read_memory(source);
-            break;
-        case REG_POINTER:
-            source_val = (uint16_t) read_memory(REGS[source]);
-            break;
-        case OFFSET:
-            source_val = (uint16_t) read_memory(0xFF00 + source);
-            break;
-        case REG_OFFSET:
-            source_val = (uint16_t) read_memory(0xFF00 + read_8bit_reg(C));
-            break;
-        //source is 16 or 8 bit constant
-        default:
-            source_val = source;
-            break;
+//TODO PUT PC ON ADDR BUS BEFORE OR DURING FETCH NEXT BYTE?
+void ld_r8_imm8(uint8_t dest) {
+    read_next_byte();
+    write_8bit_reg(dest, CPU.DATA_BUS);
+}
+
+void ld_rW_imm8(uint8_t load_a) {
+    read_next_byte();
+    write_8bit_reg(W, CPU.DATA_BUS);
+    CPU.ADDRESS_BUS = REGS[WZ];
+    if (load_a) {
+        CPU.DATA_BUS = read_8bit_reg(A);
     }
-    switch (dest_type) {
-        case REG_8BIT:
-            write_8bit_reg(dest, (uint8_t) source_val);
-            return;
-        case REG_16BIT:
-            REGS[dest] = source_val;
-            return;
-        case POINTER:
-            if (source_type == REG_8BIT) {
-                write_memory(dest, (uint8_t) source_val);
-            }
-            else {
-                write_memory(dest, (uint8_t) source_val & 0x00FF);
-                write_memory(dest + 1, (uint8_t) ((source_val & 0xFF00) >> 8));
-            }
-            return;
-        case REG_POINTER:
-            write_memory(REGS[dest], (uint8_t) source_val);
-            return;
-        case OFFSET:
-            write_memory(0xFF00 + dest, (uint8_t) source_val);
-            return;
-        case REG_OFFSET:
-            write_memory(0xFF00 + read_8bit_reg(C), (uint8_t) source_val);
-            return;
-        default:
-            perror("Invalid operand in load");
-    }
+}
+void ld_r8_data_bus(uint8_t dest) {
+    write_8bit_reg(dest, CPU.DATA_BUS);
+}
+
+void ld_r8_addr_bus(uint8_t dest) {
+    read_memory2();
+    write_8bit_reg(dest, CPU.DATA_BUS);
+}
+
+void ldh_imm8() {
+    read_next_byte();
+    CPU.ADDRESS_BUS = 0xFF00 + CPU.DATA_BUS;
 
 }
 
-void ld_inc(uint8_t action) {
-    switch(action) {
-        case DEST_INC:
-            write_memory(REGS[HL], read_8bit_reg(A));
-            REGS[HL]++;
-            return;
-        case DEST_DEC:
-            write_memory(REGS[HL], read_8bit_reg(A));
-            REGS[HL]--;
-            return;
-        case SOURCE_INC:
-            write_8bit_reg(A, read_memory(REGS[HL]));
-            REGS[HL]++;
-            return;
-        case SOURCE_DEC:
-            write_8bit_reg(A, read_memory(REGS[HL]));
-            REGS[HL]--;
-            return;
-        default:
-            perror("Invalid action in LD_INC");
-    }
+void ld_imm16_sp(uint8_t byte_num) {
+    CPU.ADDRESS_BUS = CPU.REGS[WZ];
+    CPU.DATA_BUS = byte_num == 0 ? read_8bit_reg(SP0) : read_8bit_reg(SP1);
+    write_memory2();
+    CPU.REGS[WZ]++;
 }
 
-void ld_sp_off(int8_t offset) {
-    REGS[HL] = REGS[SP] + offset;
-    write_8bit_reg(F, get_add_flags_byte(REGS[HL], REGS[SP]));
+void ld_hl_sp8() {
+    CPU.REGS[HL] = REGS[SP] + CPU.DATA_BUS;
+    write_8bit_reg(F, get_add_flags_byte(CPU.REGS[HL], CPU.REGS[SP]));
+}
+
+void ld_sp_hl() {
+    CPU.REGS[SP] = CPU.REGS[HL];
 }
 
 ///////////////////////////////////////// ARITHMETIC INSTRUCTIONS  /////////////////////////////////////////
@@ -924,7 +920,7 @@ void ei() {
 //TODO needs to correctly implement halt
 void halt() {
     if (IME) {
-        CPU_STATE = HALTED;
+        CPU_STATE_temp = HALTED;
     }
 }
 
@@ -968,5 +964,5 @@ void nop([[maybe_unused]] uint8_t opcode) {
 }
 
 void stop() {
-    CPU_STATE = HALTED;
+    CPU_STATE_temp = HALTED;
 }

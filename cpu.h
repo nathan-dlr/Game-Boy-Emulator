@@ -57,6 +57,72 @@
 #define SVBK 0xFF70
 #define IE 0xFFFF
 
+typedef struct CPU_STRUCT {
+    uint16_t REGS[7];
+    uint8_t IR;
+    uint8_t DATA_BUS;
+    uint16_t ADDRESS_BUS;
+} CPU_STRUCT;
+
+static CPU_STRUCT CPU;
+
+enum REGISTERS_16BIT {
+    AF,
+    BC,
+    DE,
+    HL,
+    SP,
+    PC,
+    WZ
+};
+
+enum REGISTERS_8BIT {
+    A,
+    F,
+    B,
+    C,
+    D,
+    E,
+    H,
+    L,
+    SP1,
+    SP0,
+    PC1,
+    PC0,
+    W,
+    Z
+};
+
+enum OPERAND_FORMAT {
+    REG_8BIT,
+    REG_16BIT,
+    CONST_8BIT,
+    CONST_16BIT,
+    POINTER,
+    REG_POINTER,
+    OFFSET,
+    REG_OFFSET,
+};
+
+enum CC {
+    NOT_ZERO,
+    ZERO,
+    NOT_CARRY,
+    CARRY,
+    NONE
+};
+
+enum ACTION {
+    DEST_INC,
+    DEST_DEC,
+    SOURCE_INC,
+    SOURCE_DEC
+};
+
+enum CPU_STATES {
+    RUNNING,
+    HALTED
+};
 
 uint16_t get_debug_pc();
 void cpu_init();
@@ -110,54 +176,19 @@ void bit(uint8_t bit_num, uint8_t source_reg, bool reg_8bit);
 void res(uint8_t bit_num, uint8_t source_reg, bool reg_8bit);
 void set(uint8_t bit_num, uint8_t source_reg, bool reg_8bit);
 
-enum REGISTERS_16BIT {
-    AF,
-    BC,
-    DE,
-    HL,
-    SP,
-    PC
-};
+void ld_r8_imm8(uint8_t dest);
+void ld_rW_imm8(uint8_t load_a);
+void ld_r8_data_bus(uint8_t dest);
+void ld_r8_addr_bus(uint8_t dest);
+void ld_r16_wz(uint8_t dest);
+void ldh_imm8();
+void ldh_c_a();
+void ld_imm16_sp(uint8_t byte_num);
+void ld_hl_sp8();
+void ld_sp_hl();
 
-enum REGISTERS_8BIT {
-    A,
-    F,
-    B,
-    C,
-    D,
-    E,
-    H,
-    L
-};
+uint8_t read_next_byte();
+void write_8bit_reg(uint8_t reg, uint8_t val);
+uint8_t read_8bit_reg(uint8_t reg);
 
-enum OPERAND_FORMAT {
-    REG_8BIT,
-    REG_16BIT,
-    CONST_8BIT,
-    CONST_16BIT,
-    POINTER,
-    REG_POINTER,
-    OFFSET,
-    REG_OFFSET,
-};
-
-enum CC {
-    NZ,
-    Z,
-    NC,
-    CARRY,
-    NONE
-};
-
-enum ACTION {
-    DEST_INC,
-    DEST_DEC,
-    SOURCE_INC,
-    SOURCE_DEC
-};
-
-enum CPU_STATES {
-    RUNNING,
-    HALTED
-};
 #endif //GB_EMU_CPU_H

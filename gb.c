@@ -9,7 +9,6 @@ static void memory_init(const char* file_name);
 static void io_ports_init();
 static void check_sp();
 
-
 //we know it works at least until 0xc018
 int main(int argc, char *argv[]) {
     memory_init(argv[1]);
@@ -30,6 +29,14 @@ uint8_t read_memory(uint16_t address) {
 
 void write_memory(uint16_t address, uint8_t value) {
     MEMORY[address] = value;
+}
+
+uint8_t read_memory2() {
+    CPU.DATA_BUS = MEMORY[CPU.ADDRESS_BUS];
+}
+
+void write_memory2() {
+
 }
 
 static void memory_init(const char* file_name) {
