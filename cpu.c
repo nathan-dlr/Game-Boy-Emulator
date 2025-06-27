@@ -58,25 +58,13 @@ void execute_next_instruction() {
 
 ///////////////////////////////////////// GENERAL HELPER FUNCTIONS /////////////////////////////////////////
 
-void write_8bit_reg(uint8_t reg, uint8_t val) {
-    uint8_t index;
-    if (reg % 2 == 0) {
-        index = reg / 2;
-        REGS[index] = (REGS[index] & 0x00FF) | (val << 8);
-    }
-    else {
-        index = (reg - 1) / 2;
-        REGS[index] = (REGS[index] & 0xFF00) | val;
-    }
+static uint16_t get_reg_pair(uint8_t reg_pair) {
+    return (CPU.REGS[reg_pair * 2] >> 8) | CPU.REGS[(reg_pair * 2) + 1];
 }
 
-uint8_t read_8bit_reg(uint8_t reg) {
-    if (reg % 2 == 0) {
-        return (REGS[reg / 2] & 0xFF00) >> 8;
-    }
-    else {
-        return REGS[(reg - 1) / 2] & 0x00FF;
-    }
+static uint16_t write_reg_pair(uint8_t reg_pair, uint16_t value) {
+    CPU.REGS[reg_pair * 2] = (uint8_t) value >> 8;
+    CPU.REGS[(reg_pair * 2) + 1] = (uint8_t) value;
 }
 
 /*
@@ -225,49 +213,70 @@ static uint8_t get_rot_flags(uint8_t result, bool set_zero, bool carry_flag_new)
 //LD HL,SP+e8 - 3 cycles: decode -> read_next_byte -> add to low byte of sp and store in L -> add any carry from low byte add and store in H
 //LD SP,HL - 2 cycles : decode -> ld_sp_hl
 
+//ADD A,r8 - 1 cycle: decode/add
+//ADD A,[HL] - 2 cycles: decode/set address bus -> read byte -> add
+//ADD A,n8 - 2 cycles: decode -> read_next_byte/add
+//ADD HL,r16 - 2 cycles: decode -> add first bit -> add second bit
+//ADD HL,SP - 2 cycles: decode -> add first bit -> add second bit
+//ADD SP,e8 -
+
 //TODO PUT PC ON ADDR BUS BEFORE OR DURING FETCH NEXT BYTE?
+/*
+ * Loads byte at [PC] into 8bit register indicated by DEST
+ */
 void ld_r8_imm8(uint8_t dest) {
     read_next_byte();
-    write_8bit_reg(dest, CPU.DATA_BUS);
+    CPU.REGS[dest] = CPU.DATA_BUS;
 }
 
+/*
+ * Loads [PC] into temporary register W
+ * Puts 8bit register A onto data but if indicated by LOAD_A
+ */
 void ld_rW_imm8(uint8_t load_a) {
     read_next_byte();
     write_8bit_reg(W, CPU.DATA_BUS);
-    CPU.ADDRESS_BUS = REGS[WZ];
+    CPU.ADDRESS_BUS = get_reg_pair(WZ);
     if (load_a) {
-        CPU.DATA_BUS = read_8bit_reg(A);
+        CPU.DATA_BUS = CPU.REGS[A];
     }
 }
-void ld_r8_data_bus(uint8_t dest) {
-    write_8bit_reg(dest, CPU.DATA_BUS);
-}
 
+/*
+ * Loads [ADDR_BUS] into 8bit register indicated by DEST
+ */
 void ld_r8_addr_bus(uint8_t dest) {
     read_memory2();
-    write_8bit_reg(dest, CPU.DATA_BUS);
+    CPU.REGS[dest] = CPU.DATA_BUS;
 }
 
+/*
+ * Used for LDH with an immediate value
+ * Adds the immediate value to 0xFF00 and puts it on the ADDR_BUS
+ */
 void ldh_imm8() {
     read_next_byte();
     CPU.ADDRESS_BUS = 0xFF00 + CPU.DATA_BUS;
-
 }
 
+/*
+ * Loads
+ */
 void ld_imm16_sp(uint8_t byte_num) {
-    CPU.ADDRESS_BUS = CPU.REGS[WZ];
-    CPU.DATA_BUS = byte_num == 0 ? read_8bit_reg(SP0) : read_8bit_reg(SP1);
+    CPU.ADDRESS_BUS = get_reg_pair(WZ);
+    CPU.DATA_BUS = byte_num == 0 ? CPU.REGS[SP0] : CPU.REGS[SP1];
     write_memory2();
-    CPU.REGS[WZ]++;
+    write_reg_pair(WZ, get_reg_pair(WZ) + 1);
 }
 
 void ld_hl_sp8() {
-    CPU.REGS[HL] = REGS[SP] + CPU.DATA_BUS;
-    write_8bit_reg(F, get_add_flags_byte(CPU.REGS[HL], CPU.REGS[SP]));
+    uint16_t sp = get_reg_pair(SP);
+    write_reg_pair(HL, sp + CPU.DATA_BUS);
+    CPU.REGS[F] = get_add_flags_byte(CPU.REGS[HL], sp);
 }
 
 void ld_sp_hl() {
-    CPU.REGS[SP] = CPU.REGS[HL];
+    write_reg_pair(SP, get_reg_pair(HL));
 }
 
 ///////////////////////////////////////// ARITHMETIC INSTRUCTIONS  /////////////////////////////////////////
@@ -278,44 +287,56 @@ void ld_sp_hl() {
  * Depending on operand, result will be stored in either accumulator, HL, or SP
  * Zero, carry, and half-carry flags are set
  */
-void add(uint16_t operand, uint8_t operand_type) {
-    uint16_t result;
-    uint8_t accumulator = read_8bit_reg(A);
-    uint8_t new_flags = 0x00;
-    switch (operand_type) {
-        case REG_8BIT:
-            result = accumulator + read_8bit_reg(operand);
-            new_flags = get_add_flags_byte((uint8_t) result, accumulator);
-            new_flags |= get_zero_flag((uint8_t) result);
-            write_8bit_reg(A, (uint8_t) result);
-            break;
-        case REG_16BIT:
-            result = REGS[HL] + REGS[operand];
-            new_flags = get_add_flags_word(result, REGS[HL]);
-            new_flags |= ZERO_FLAG(read_8bit_reg(F));
-            REGS[HL] = result;
-            break;
-        case CONST_8BIT:
-            result = accumulator + operand;
-            new_flags = get_add_flags_byte((uint8_t) result, accumulator);
-            new_flags |= get_zero_flag((uint8_t) result);
-            write_8bit_reg(A, (uint8_t) result);
-            break;
-        case REG_POINTER:
-            result = accumulator + read_memory(REGS[HL]);
-            new_flags = get_add_flags_byte((uint8_t) result, accumulator);
-            new_flags |= get_zero_flag((uint8_t) result);
-            write_8bit_reg(A, (uint8_t) result);
-            break;
-        case OFFSET:
-            result = REGS[SP] + (int8_t) operand;
-            new_flags = get_add_flags_byte((uint8_t) result, REGS[SP]);
-            REGS[SP] = result;
-            break;
-        default:
-            perror("Invalid operand in add");
-    }
-    write_8bit_reg(F, new_flags);
+//void add(uint16_t operand, uint8_t operand_type) {
+//    uint16_t result;
+//    uint8_t accumulator = read_8bit_reg(A);
+//    uint8_t new_flags = 0x00;
+//    switch (operand_type) {
+//        case REG_8BIT:
+//            result = accumulator + read_8bit_reg(operand);
+//            new_flags = get_add_flags_byte((uint8_t) result, accumulator);
+//            new_flags |= get_zero_flag((uint8_t) result);
+//            write_8bit_reg(A, (uint8_t) result);
+//            break;
+//        case REG_16BIT:
+//            result = REGS[HL] + REGS[operand];
+//            new_flags = get_add_flags_word(result, REGS[HL]);
+//            new_flags |= ZERO_FLAG(read_8bit_reg(F));
+//            REGS[HL] = result;
+//            break;
+//        case CONST_8BIT:
+//            result = accumulator + operand;
+//            new_flags = get_add_flags_byte((uint8_t) result, accumulator);
+//            new_flags |= get_zero_flag((uint8_t) result);
+//            write_8bit_reg(A, (uint8_t) result);
+//            break;
+//        case REG_POINTER:
+//            result = accumulator + read_memory(REGS[HL]);
+//            new_flags = get_add_flags_byte((uint8_t) result, accumulator);
+//            new_flags |= get_zero_flag((uint8_t) result);
+//            write_8bit_reg(A, (uint8_t) result);
+//            break;
+//        case OFFSET:
+//            result = REGS[SP] + (int8_t) operand;
+//            new_flags = get_add_flags_byte((uint8_t) result, REGS[SP]);
+//            REGS[SP] = result;
+//            break;
+//        default:
+//            perror("Invalid operand in add");
+//    }
+//    write_8bit_reg(F, new_flags);
+//}
+
+void add_imm() {
+    read_next_byte();
+    add(A);
+}
+void add(uint8_t dest) {
+    uint8_t result = CPU.REGS[dest] + CPU.DATA_BUS;
+    uint8_t flags = get_add_flags_byte(result, CPU.REGS[dest]);
+    flags |= get_zero_flag(result);
+    CPU.REGS[dest] = result;
+    CPU.REGS[F] = flags;
 }
 
 /*
@@ -324,18 +345,21 @@ void add(uint16_t operand, uint8_t operand_type) {
  * Takes in either 8bit reg, 8bit const, or register pointer (HL)
  * Zero, carry, and half-carry flags are set
  */
-void adc(uint8_t operand, uint8_t operand_type) {
-    uint8_t carry_bit = CARRY_FLAG(read_8bit_reg(F)) ? 0x01 : 0x00;
-    uint8_t accumulator = read_8bit_reg(A);
-    uint8_t source_val = get_8bit_operand(operand, operand_type);
+void adc(uint8_t imm) {
+    if (imm) {
+        read_next_byte();
+    }
+    uint8_t carry_bit = CARRY_FLAG(CPU.REGS[F]) ? 0x01 : 0x00;
+    uint8_t accumulator = CPU.REGS[A];
+    uint8_t source_val = CPU.DATA_BUS;
 
     uint8_t intermediate = accumulator + carry_bit;
     uint8_t result = source_val + intermediate;
     uint8_t flags = get_add_flags_byte(intermediate, accumulator);
     flags |= (get_add_flags_byte(result, intermediate) | get_zero_flag(result));
 
-    write_8bit_reg(F, flags);
-    write_8bit_reg(A, result);
+    CPU.REGS[F] = flags;
+    CPU.REGS[A] = result;
 }
 
 /*

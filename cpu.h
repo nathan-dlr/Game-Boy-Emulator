@@ -58,7 +58,7 @@
 #define IE 0xFFFF
 
 typedef struct CPU_STRUCT {
-    uint16_t REGS[7];
+    uint16_t REGS[14];
     uint8_t IR;
     uint8_t DATA_BUS;
     uint16_t ADDRESS_BUS;
@@ -154,8 +154,8 @@ void cpl();
 void scf();
 void ccf();
 void halt();
-void add(uint16_t operand, uint8_t operand_type);
-void adc(uint8_t operand, uint8_t operand_type);
+void add(uint8_t dest);
+void adc(uint8_t imm);
 void sub(uint8_t operand, uint8_t operand_type);
 void sbc(uint8_t operand, uint8_t operand_type);
 void cp(uint8_t operand, uint8_t operand_type);
@@ -178,14 +178,12 @@ void set(uint8_t bit_num, uint8_t source_reg, bool reg_8bit);
 
 void ld_r8_imm8(uint8_t dest);
 void ld_rW_imm8(uint8_t load_a);
-void ld_r8_data_bus(uint8_t dest);
 void ld_r8_addr_bus(uint8_t dest);
-void ld_r16_wz(uint8_t dest);
 void ldh_imm8();
-void ldh_c_a();
 void ld_imm16_sp(uint8_t byte_num);
 void ld_hl_sp8();
 void ld_sp_hl();
+void add_imm();
 
 uint8_t read_next_byte();
 void write_8bit_reg(uint8_t reg, uint8_t val);

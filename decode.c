@@ -100,7 +100,7 @@ static void relative_jumps(uint8_t opcode) {
             //LD [n16],SP - 5 cycles: decode -> read_next_byte -> read_next_byte -> write_memory -> write_memory
             //ld(fetch_word(), SP, POINTER, REG_16BIT);
             ld_r8_imm8(Z);
-            ld_rW_imm8(0);        //TODO MUST HAVE PARAMETER TO WORK WITH QUEUE
+            ld_rW_imm8(0);
             ld_imm16_sp(0);
             ld_imm16_sp(1);
             return;
@@ -116,10 +116,36 @@ static void relative_jumps(uint8_t opcode) {
     }
 }
 
+//BC, DE, HL, SP};
 static void load_immediate_add_16bit(uint8_t opcode) {
     uint8_t bit_three = GET_BIT_THREE(opcode);
     uint8_t bits_four_five = GET_BITS_FOUR_FIVE(opcode);
-    bit_three ? add(REGISTER_PAIRS_DT[bits_four_five], REG_16BIT) : ld(REGISTER_PAIRS_DT[bits_four_five], fetch_word(), REG_16BIT, CONST_16BIT);
+    //ADD HL,r16 - 2 cycles: decode -> add first bit -> add second bit
+    if (bit_three) {
+
+    }
+    //LD r16,n16 - 3 cycles: decode -> ld_r8_imm -> ld_r8_imm
+    else {
+        switch (bits_four_five) {
+            case 0:
+                ld_r8_imm8(C);
+                ld_r8_imm8(B);
+                return;
+            case 1:
+                ld_r8_imm8(E);
+                ld_r8_imm8(D);
+                return;
+            case 2:
+                ld_r8_imm8(L);
+                ld_r8_imm8(H);
+                return;
+            case 3:
+                ld_r8_imm8(SP0);
+                ld_r8_imm8(SP1);
+        }
+
+    }
+    //bit_three ? add(REGISTER_PAIRS_DT[bits_four_five], REG_16BIT) : ld(REGISTER_PAIRS_DT[bits_four_five], fetch_word(), REG_16BIT, CONST_16BIT);
 }
 
 static void indirect_loading(uint8_t opcode) {
@@ -302,11 +328,20 @@ static void alu(uint8_t opcode) {
     else {
         operand = REGISTERS_DT[third_octal_dig];
         operand_type = third_octal_dig == 6 ? REG_POINTER : REG_8BIT;
+        if (third_octal_dig == 6) {
+            CPU.ADDRESS_BUS = CPU.REGS[HL];
+            //TODO GO IN QUEUE
+            read_memory2();
+        }
+        else {
+            CPU.DATA_BUS = CPU.REGS[operand]
+        }
+
     }
 
     switch (second_octal_dig) {
         case 0:
-            add(operand, operand_type);
+            add(operand);
             return;
         case 1:
             adc(operand, operand_type);
@@ -347,8 +382,9 @@ static void mem_mapped_ops(uint8_t opcode) {
             ldh_imm8();
             write_memory2();
             return;
+        //ADD A,n8 - 2 cycles: decode -> read_next_byte/add
         case 5:
-            add(fetch_byte(), OFFSET);
+            add_imm();
             return;
         //LDH A,[n16] - 3 cycles: decode -> read_next_byte -> read_memory/ld_r8_bus
         case 6:
@@ -357,6 +393,7 @@ static void mem_mapped_ops(uint8_t opcode) {
             ld_r8_addr_bus(A);
             return;
         //LD HL,SP+e8 - 3 cycles: decode -> read_next_byte -> add and load
+        //TODO make this more accurate according to docs
         case 7:
             //ld_sp_off(fetch_byte());
             read_next_byte();
@@ -424,8 +461,7 @@ static void conditional_jumps(uint8_t opcode) {
             //ld(A, fetch_word(), REG_8BIT, POINTER);
             ld_r8_imm8(Z);
             ld_rW_imm8(0);
-            read_memory2();
-            ld_r8_data_bus(A);
+            ld_r8_addr_bus(A);
             return;
     }
 }
