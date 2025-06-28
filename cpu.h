@@ -96,8 +96,8 @@ enum REGISTERS_8BIT {
 enum OPERAND_FORMAT {
     REG_8BIT,
     REG_16BIT,
-    CONST_8BIT,
-    CONST_16BIT,
+    IMM_8BIT,
+    IMM_16BIT,
     POINTER,
     REG_POINTER,
     OFFSET,
@@ -132,9 +132,6 @@ void execute_next_instruction();
 
 void nop(uint8_t opcode);
 void stop();
-void ld(uint16_t dest, uint16_t source, uint8_t dest_type, uint8_t source_type);
-void ld_inc(uint8_t action);
-void ld_sp_off(int8_t offset);
 void inc(uint8_t operand, uint8_t operand_type);
 void dec(uint8_t operand, uint8_t operand_type);
 void rl(uint8_t source_reg, bool reg_8bit);
@@ -154,11 +151,6 @@ void cpl();
 void scf();
 void ccf();
 void halt();
-void add(uint8_t dest);
-void adc(uint8_t imm);
-void sub(uint8_t operand, uint8_t operand_type);
-void sbc(uint8_t operand, uint8_t operand_type);
-void cp(uint8_t operand, uint8_t operand_type);
 void and(uint8_t operand, uint8_t operand_type);
 void xor(uint8_t operand, uint8_t operand_type);
 void or(uint8_t operand, uint8_t operand_type);
@@ -176,17 +168,30 @@ void bit(uint8_t bit_num, uint8_t source_reg, bool reg_8bit);
 void res(uint8_t bit_num, uint8_t source_reg, bool reg_8bit);
 void set(uint8_t bit_num, uint8_t source_reg, bool reg_8bit);
 
+uint8_t read_next_byte();
+uint16_t read_16bit_reg(uint8_t reg_pair);
+uint16_t write_16bit_reg(uint8_t reg_pair, uint16_t value);
+
+//LD
 void ld_r8_imm8(uint8_t dest);
 void ld_rW_imm8(uint8_t load_a);
 void ld_r8_addr_bus(uint8_t dest);
+void ld_r8_data_bus(uint8_t dest);
 void ldh_imm8();
 void ld_imm16_sp(uint8_t byte_num);
 void ld_hl_sp8();
 void ld_sp_hl();
-void add_imm();
-
-uint8_t read_next_byte();
-void write_8bit_reg(uint8_t reg, uint8_t val);
-uint8_t read_8bit_reg(uint8_t reg);
+//8-bit arithmetic
+void add_8bit(uint8_t operand_type);
+void adc(uint8_t operand_type);
+void cp(uint8_t operand_type);
+void sub(uint8_t operand_type);
+void sbc(uint8_t operand_type);
+void inc_8bit(uint8_t dest);
+void dec_8bit(uint8_t dest);
+//16-bit arithmetic
+void add_16bit(uint8_t source);
+void add_sp_e8(uint8_t cycle);
+void inc_16bit(uint8_t dest);
 
 #endif //GB_EMU_CPU_H

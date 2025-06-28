@@ -120,33 +120,28 @@ static void relative_jumps(uint8_t opcode) {
 static void load_immediate_add_16bit(uint8_t opcode) {
     uint8_t bit_three = GET_BIT_THREE(opcode);
     uint8_t bits_four_five = GET_BITS_FOUR_FIVE(opcode);
-    //ADD HL,r16 - 2 cycles: decode -> add first bit -> add second bit
-    if (bit_three) {
-
-    }
+    //ADD HL,r16 - 2 cycles: decode -> add first bit -> add_8bit second bit
     //LD r16,n16 - 3 cycles: decode -> ld_r8_imm -> ld_r8_imm
-    else {
-        switch (bits_four_five) {
-            case 0:
-                ld_r8_imm8(C);
-                ld_r8_imm8(B);
-                return;
-            case 1:
-                ld_r8_imm8(E);
-                ld_r8_imm8(D);
-                return;
-            case 2:
-                ld_r8_imm8(L);
-                ld_r8_imm8(H);
-                return;
-            case 3:
-                ld_r8_imm8(SP0);
-                ld_r8_imm8(SP1);
-        }
-
+    switch (bits_four_five) {
+        case 0:
+            bit_three ? add_16bit(C) : ld_r8_imm8(C);
+            bit_three ? add_16bit(B) : ld_r8_imm8(B);
+            return;
+        case 1:
+            bit_three ? add_16bit(E) : ld_r8_imm8(E);
+            bit_three ? add_16bit(D) : ld_r8_imm8(D);
+            return;
+        case 2:
+            bit_three ? add_16bit(L) : ld_r8_imm8(L);
+            bit_three ? add_16bit(H) : ld_r8_imm8(H);
+            return;
+        case 3:
+            bit_three ? add_16bit(SP0) : ld_r8_imm8(SP0);
+            bit_three ? add_16bit(SP1) : ld_r8_imm8(SP1);
+            return;
     }
-    //bit_three ? add(REGISTER_PAIRS_DT[bits_four_five], REG_16BIT) : ld(REGISTER_PAIRS_DT[bits_four_five], fetch_word(), REG_16BIT, CONST_16BIT);
 }
+
 
 static void indirect_loading(uint8_t opcode) {
     uint8_t bit_three = GET_BIT_THREE(opcode);
@@ -223,6 +218,8 @@ static void indirect_loading(uint8_t opcode) {
     }
 }
 
+
+//TODO Becareful with the cycles difference between reg8 and [hl]
 static void inc_or_dec(uint8_t opcode) {
     uint8_t third_octal_dig = GET_THIRD_OCTAL_DIGIT(opcode);
     uint8_t operand;
@@ -231,14 +228,17 @@ static void inc_or_dec(uint8_t opcode) {
         uint8_t bit_three = GET_BIT_THREE(opcode);
         uint8_t bits_four_five = GET_BITS_FOUR_FIVE(opcode);
         operand = REGISTER_PAIRS_DT[bits_four_five];
-        bit_three ? dec(operand, REG_16BIT) : inc(operand,REG_16BIT);
+        bit_three ? dec(operand, REG_16BIT) : inc_16bit(operand);
     }
     //operand is 8 bit register or byte pointed to by HL
     else {
         uint8_t second_octal_dig = GET_SECOND_OCTAL_DIGIT(opcode);
-        uint8_t operand_type = second_octal_dig == 6 ? REG_POINTER : REG_8BIT;
+        if (second_octal_dig == 6) {
+            CPU.ADDRESS_BUS = read_16bit_reg(HL);
+            read_memory2();
+        }
         operand = REGISTERS_DT[second_octal_dig];
-        third_octal_dig == 4 ? inc(operand, operand_type) : dec(operand, operand_type);
+        third_octal_dig == 4 ? inc_8bit(operand) : dec_8bit(operand);
     }
 }
 
@@ -246,11 +246,12 @@ static void inc_or_dec(uint8_t opcode) {
 static void ld_8bit(uint8_t opcode) {
     uint8_t reg_dt_index = GET_SECOND_OCTAL_DIGIT(opcode);
     uint8_t dest_type = reg_dt_index == 6 ? REG_POINTER : REG_8BIT;
-    ld(REGISTERS_DT[reg_dt_index], fetch_byte(), dest_type, CONST_8BIT);
+    //ld(REGISTERS_DT[reg_dt_index], fetch_byte(), dest_type, IMM_8BIT);
     //LD r8,n8 - 2 cycles: decode -> ld_r8_imm
     if (dest_type != 6) {
         ld_r8_imm8(REGISTERS_DT[reg_dt_index]);
     }
+    //TODO NEEDS TO SET ADDRESS BUS TO HL BEFORE WRITE
     //LD [HL],n8 - 3 cycles: decode -> read_next_byte -> write_bus
     else {
         read_next_byte();
@@ -298,17 +299,18 @@ static void ld_or_halt(uint8_t opcode) {
     }
     //LD r8,r8 - 1 cycle: decode/ld_r8_bus
     else if (source_reg != 6 && dest_reg != 8) {
-        write_8bit_reg(dest_reg, read_8bit_reg(source_reg));
+        CPU.DATA_BUS = CPU.REGS[source_reg];
+        ld_r8_data_bus(dest_reg);
     }
     //LD r8,[HL] - 2 cycles: decode -> ld_r8_addr_bus
     else  if (source_reg == 6) {
-        CPU.ADDRESS_BUS = CPU.REGS[HL];
+        CPU.ADDRESS_BUS = read_16bit_reg(HL);
         ld_r8_addr_bus(dest_reg);
     }
     //LD [HL],r8 - 2 cycles: decode -> write_memory
     else {
-        CPU.ADDRESS_BUS = CPU.REGS[HL];
-        CPU.DATA_BUS = read_8bit_reg(source_reg); //MAKE SURE 8bit read works
+        CPU.ADDRESS_BUS = read_16bit_reg(HL);
+        CPU.DATA_BUS = CPU.REGS[A];
         write_memory2();
     }
 }
@@ -321,36 +323,34 @@ static void alu(uint8_t opcode) {
     uint8_t operand;
     uint8_t operand_type;
     if (first_octal_dig == 3) {
-        operand = fetch_byte();
-        operand_type = CONST_8BIT;
+        operand_type = IMM_8BIT;
     }
     //first_octal_dig is 2
     else {
         operand = REGISTERS_DT[third_octal_dig];
         operand_type = third_octal_dig == 6 ? REG_POINTER : REG_8BIT;
         if (third_octal_dig == 6) {
-            CPU.ADDRESS_BUS = CPU.REGS[HL];
+            CPU.ADDRESS_BUS = read_16bit_reg(HL);
             //TODO GO IN QUEUE
             read_memory2();
         }
         else {
-            CPU.DATA_BUS = CPU.REGS[operand]
+            CPU.DATA_BUS = CPU.REGS[operand];
         }
-
     }
-
+    //TODO NEED TO ADD TO QUEUE TWICE IF OPERAND_TYPE IS IMM MAYBE MAKE FUNCTION TABLE TO CALL THEM EASIER
     switch (second_octal_dig) {
         case 0:
-            add(operand);
+            add_8bit(operand_type);
             return;
         case 1:
-            adc(operand, operand_type);
+            adc(operand_type);
             return;
         case 2:
-            sub(operand, operand_type);
+            sub(operand_type);
             return;
         case 3:
-            sbc(operand, operand_type);
+            sbc(operand_type);
             return;
         case 4:
             and(operand, operand_type);
@@ -362,7 +362,7 @@ static void alu(uint8_t opcode) {
             or(operand, operand_type);
             return;
         case 7:
-            cp(operand, operand_type);
+            cp(operand_type);
             return;
         default:
             perror("Invalid opcode in alu decode");
@@ -378,13 +378,15 @@ static void mem_mapped_ops(uint8_t opcode) {
         //LDH [n16],A - 3 cycles: decode -> read_next_byte -> write_memory
         case 4:
             //ld(fetch_byte(), A, OFFSET, REG_8BIT);
-            CPU.DATA_BUS = read_8bit_reg(A); //TODO doesnt work with this function yet
+            CPU.DATA_BUS = CPU.REGS[A];
             ldh_imm8();
             write_memory2();
             return;
-        //ADD A,n8 - 2 cycles: decode -> read_next_byte/add
+        //TODO ADD SP 8
         case 5:
-            add_imm();
+            add_sp_e8(2);
+            add_sp_e8(3);
+            add_sp_e8(4);
             return;
         //LDH A,[n16] - 3 cycles: decode -> read_next_byte -> read_memory/ld_r8_bus
         case 6:
@@ -392,7 +394,7 @@ static void mem_mapped_ops(uint8_t opcode) {
             ldh_imm8();
             ld_r8_addr_bus(A);
             return;
-        //LD HL,SP+e8 - 3 cycles: decode -> read_next_byte -> add and load
+        //LD HL,SP+e8 - 3 cycles: decode -> read_next_byte -> add_8bit and load
         //TODO make this more accurate according to docs
         case 7:
             //ld_sp_off(fetch_byte());

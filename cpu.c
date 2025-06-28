@@ -58,11 +58,11 @@ void execute_next_instruction() {
 
 ///////////////////////////////////////// GENERAL HELPER FUNCTIONS /////////////////////////////////////////
 
-static uint16_t get_reg_pair(uint8_t reg_pair) {
+uint16_t read_16bit_reg(uint8_t reg_pair) {
     return (CPU.REGS[reg_pair * 2] >> 8) | CPU.REGS[(reg_pair * 2) + 1];
 }
 
-static uint16_t write_reg_pair(uint8_t reg_pair, uint16_t value) {
+uint16_t write_16bit_reg(uint8_t reg_pair, uint16_t value) {
     CPU.REGS[reg_pair * 2] = (uint8_t) value >> 8;
     CPU.REGS[(reg_pair * 2) + 1] = (uint8_t) value;
 }
@@ -104,7 +104,7 @@ static uint8_t get_8bit_operand(uint8_t operand, uint8_t operand_type) {
         case REG_8BIT:
             source_val = read_8bit_reg(operand);
             break;
-        case CONST_8BIT:
+        case IMM_8BIT:
             source_val = operand;
             break;
         case REG_POINTER:
@@ -210,14 +210,14 @@ static uint8_t get_rot_flags(uint8_t result, bool set_zero, bool carry_flag_new)
 //LD A,[HLD] - 2 cycles: decode -> read_memory/ld_r8_bus
 //LD SP,n16 - 3 cycles: decode -> read_next_byte/ld_r8_bus -> read_next_byte/ld_r8_bus
 //LD [n16],SP - 5 cycles: decode -> read_next_byte -> read_next_byte -> write_memory -> write_memory
-//LD HL,SP+e8 - 3 cycles: decode -> read_next_byte -> add to low byte of sp and store in L -> add any carry from low byte add and store in H
+//LD HL,SP+e8 - 3 cycles: decode -> read_next_byte -> add to low byte of sp and store in L -> add any carry from low byte add_8bit and store in H
 //LD SP,HL - 2 cycles : decode -> ld_sp_hl
 
-//ADD A,r8 - 1 cycle: decode/add
-//ADD A,[HL] - 2 cycles: decode/set address bus -> read byte -> add
-//ADD A,n8 - 2 cycles: decode -> read_next_byte/add
-//ADD HL,r16 - 2 cycles: decode -> add first bit -> add second bit
-//ADD HL,SP - 2 cycles: decode -> add first bit -> add second bit
+//ADD A,r8 - 1 cycle: decode/add_8bit
+//ADD A,[HL] - 2 cycles: decode/set address bus -> read byte -> add_8bit
+//ADD A,n8 - 2 cycles: decode -> read_next_byte/add_8bit
+//ADD HL,r16 - 2 cycles: decode -> add first bit -> add_8bit second bit
+//ADD HL,SP - 2 cycles: decode -> add first bit -> add_8bit second bit
 //ADD SP,e8 -
 
 //TODO PUT PC ON ADDR BUS BEFORE OR DURING FETCH NEXT BYTE?
@@ -235,8 +235,8 @@ void ld_r8_imm8(uint8_t dest) {
  */
 void ld_rW_imm8(uint8_t load_a) {
     read_next_byte();
-    write_8bit_reg(W, CPU.DATA_BUS);
-    CPU.ADDRESS_BUS = get_reg_pair(WZ);
+    CPU.REGS[W] = CPU.DATA_BUS;
+    CPU.ADDRESS_BUS = read_16bit_reg(WZ);
     if (load_a) {
         CPU.DATA_BUS = CPU.REGS[A];
     }
@@ -247,6 +247,10 @@ void ld_rW_imm8(uint8_t load_a) {
  */
 void ld_r8_addr_bus(uint8_t dest) {
     read_memory2();
+    CPU.REGS[dest] = CPU.DATA_BUS;
+}
+
+void ld_r8_data_bus(uint8_t dest) {
     CPU.REGS[dest] = CPU.DATA_BUS;
 }
 
@@ -263,20 +267,20 @@ void ldh_imm8() {
  * Loads
  */
 void ld_imm16_sp(uint8_t byte_num) {
-    CPU.ADDRESS_BUS = get_reg_pair(WZ);
+    CPU.ADDRESS_BUS = read_16bit_reg(WZ);
     CPU.DATA_BUS = byte_num == 0 ? CPU.REGS[SP0] : CPU.REGS[SP1];
     write_memory2();
-    write_reg_pair(WZ, get_reg_pair(WZ) + 1);
+    write_16bit_reg(WZ, read_16bit_reg(WZ) + 1);
 }
 
 void ld_hl_sp8() {
-    uint16_t sp = get_reg_pair(SP);
-    write_reg_pair(HL, sp + CPU.DATA_BUS);
+    uint16_t sp = read_16bit_reg(SP);
+    write_16bit_reg(HL, sp + CPU.DATA_BUS);
     CPU.REGS[F] = get_add_flags_byte(CPU.REGS[HL], sp);
 }
 
 void ld_sp_hl() {
-    write_reg_pair(SP, get_reg_pair(HL));
+    write_16bit_reg(SP, read_16bit_reg(HL));
 }
 
 ///////////////////////////////////////// ARITHMETIC INSTRUCTIONS  /////////////////////////////////////////
@@ -287,7 +291,7 @@ void ld_sp_hl() {
  * Depending on operand, result will be stored in either accumulator, HL, or SP
  * Zero, carry, and half-carry flags are set
  */
-//void add(uint16_t operand, uint8_t operand_type) {
+//void add_8bit(uint16_t operand, uint8_t operand_type) {
 //    uint16_t result;
 //    uint8_t accumulator = read_8bit_reg(A);
 //    uint8_t new_flags = 0x00;
@@ -304,7 +308,7 @@ void ld_sp_hl() {
 //            new_flags |= ZERO_FLAG(read_8bit_reg(F));
 //            REGS[HL] = result;
 //            break;
-//        case CONST_8BIT:
+//        case IMM_8BIT:
 //            result = accumulator + operand;
 //            new_flags = get_add_flags_byte((uint8_t) result, accumulator);
 //            new_flags |= get_zero_flag((uint8_t) result);
@@ -322,36 +326,85 @@ void ld_sp_hl() {
 //            REGS[SP] = result;
 //            break;
 //        default:
-//            perror("Invalid operand in add");
+//            perror("Invalid operand in add_8bit");
 //    }
 //    write_8bit_reg(F, new_flags);
 //}
 
-void add_imm() {
-    read_next_byte();
-    add(A);
-}
-void add(uint8_t dest) {
-    uint8_t result = CPU.REGS[dest] + CPU.DATA_BUS;
-    uint8_t flags = get_add_flags_byte(result, CPU.REGS[dest]);
-    flags |= get_zero_flag(result);
-    CPU.REGS[dest] = result;
+
+void add_8bit(uint8_t operand_type) {
+    if (operand_type == IMM_8BIT) {
+        read_next_byte();
+        return;
+    }
+    uint8_t source_val = CPU.DATA_BUS;
+    uint8_t accumulator = CPU.REGS[A];
+    uint8_t result = source_val + accumulator;
+    uint8_t flags = get_add_flags_byte(result, accumulator) | get_zero_flag(result);
+
+    CPU.REGS[A] = result;
     CPU.REGS[F] = flags;
 }
 
+void add_16bit(uint8_t source) {
+    uint8_t dest;
+    uint8_t source_val;
+    if (source % 2 == 0) {
+        dest = CPU.REGS[H];
+        source_val = CPU.REGS[source] + (CARRY_FLAG(CPU.REGS[F]) >> 4);
+    }
+    else {
+        dest = CPU.REGS[L];
+        source_val = CPU.REGS[source];
+    }
+    uint8_t result = source_val + dest;
+    uint8_t flags = get_add_flags_byte(result, dest);
+
+    CPU.REGS[F] = flags;
+    if (source % 2 == 0) {
+        CPU.REGS[H] = result;
+    }
+    else {
+        CPU.REGS[L] = result;
+    }
+}
+
+void add_sp_e8(uint8_t cycle) {
+    uint8_t result;
+    switch (cycle) {
+        case 2:
+            read_memory2();
+            CPU.REGS[Z] = CPU.DATA_BUS;
+            return;
+        case 3:
+            result = Z + CPU.REGS[SP0];
+            CPU.REGS[L] = result;
+            CPU.REGS[F] = get_add_flags_byte(result, CPU.REGS[SP0]);
+            return;
+        case 4:
+            result = CPU.REGS[SP1] + (CARRY_FLAG(CPU.REGS[F]) >> 4);
+            result += (CPU.REGS[Z] | 0x80) ? 0xFF : 0x00;
+            CPU.REGS[H] = result;
+            return;
+        default:
+            perror("Invalid input in ADD HL SP+e8");
+            return;
+    }
+}
 /*
  * Add-Carry Instruction - adds operand, carry bit, and accumulator
  * Result stored in Accumulator Register
  * Takes in either 8bit reg, 8bit const, or register pointer (HL)
  * Zero, carry, and half-carry flags are set
  */
-void adc(uint8_t imm) {
-    if (imm) {
+void adc(uint8_t operand_type) {
+    if (operand_type == IMM_8BIT) {
         read_next_byte();
+        return;
     }
     uint8_t carry_bit = CARRY_FLAG(CPU.REGS[F]) ? 0x01 : 0x00;
-    uint8_t accumulator = CPU.REGS[A];
     uint8_t source_val = CPU.DATA_BUS;
+    uint8_t accumulator = CPU.REGS[A];
 
     uint8_t intermediate = accumulator + carry_bit;
     uint8_t result = source_val + intermediate;
@@ -367,12 +420,17 @@ void adc(uint8_t imm) {
  * Results are stored in Flag Register - zero, negative, carry, and half-carry flags are set
  * Takes in either 8bit reg, 8bit const, or register pointer (HL)
  */
-void cp(uint8_t operand, uint8_t operand_type) {
-    uint8_t source_val = get_8bit_operand(operand, operand_type);
-    uint8_t accumulator = read_8bit_reg(A);
+void cp(uint8_t operand_type) {
+    if (operand_type == IMM_8BIT) {
+        read_next_byte();
+        return;
+    }
+    uint8_t source_val = CPU.DATA_BUS;
+    uint8_t accumulator = CPU.REGS[A];
     uint16_t result = accumulator - source_val;
     uint8_t flags = get_subtraction_flags(accumulator, source_val) | get_zero_flag(result);
-    write_8bit_reg(F, flags);
+
+    CPU.REGS[F] = flags;
 }
 
 /*
@@ -381,13 +439,19 @@ void cp(uint8_t operand, uint8_t operand_type) {
  * Zero, negative, carry, and half-carry flags are set
  * Takes in either 8bit reg, 8bit const, or register pointer (HL)
  */
-void sub(uint8_t operand, uint8_t operand_type) {
-    uint8_t source_val = get_8bit_operand(operand, operand_type);
-    uint8_t accumulator = read_8bit_reg(A);
+//TODO WHY IS RESULT 16 BITS? test after everything is passing
+void sub(uint8_t operand_type) {
+    if (operand_type == IMM_8BIT) {
+        read_next_byte();
+        return;
+    }
+    uint8_t source_val = CPU.DATA_BUS;
+    uint8_t accumulator = CPU.REGS[A];
     uint16_t result = accumulator - source_val;
     uint8_t flags = get_subtraction_flags(accumulator, source_val) | get_zero_flag(result);
-    write_8bit_reg(F, flags);
-    write_8bit_reg(A, (uint8_t) result);
+
+    CPU.REGS[F] = flags;
+    CPU.REGS[A] = result;
 }
 
 /*
@@ -396,88 +460,131 @@ void sub(uint8_t operand, uint8_t operand_type) {
  * Zero, negative, carry, and half-carry flags are set
  * Takes in either 8bit reg, 8bit const, or register pointer (HL)
  */
-void sbc(uint8_t operand, uint8_t operand_type) {
-    uint8_t accumulator = read_8bit_reg(A);
-    uint8_t source_val = get_8bit_operand(operand, operand_type);
-    uint8_t carry_bit = CARRY_FLAG(read_8bit_reg(F)) ? 0x01 : 0x00;
+void sbc(uint8_t operand_type) {
+    if (operand_type == IMM_8BIT) {
+        read_next_byte();
+        return;
+    }
+    uint8_t source_val = CPU.DATA_BUS;
+    uint8_t accumulator = CPU.REGS[A];
+    uint8_t carry_bit = CARRY_FLAG(CPU.REGS[F]) ? 0x01 : 0x00;
 
     uint8_t intermediate = accumulator - source_val;
     uint8_t result = intermediate - carry_bit;
     uint8_t flags = get_subtraction_flags(accumulator, source_val);
     flags |= get_subtraction_flags(intermediate, carry_bit) | get_zero_flag(result);
 
-    write_8bit_reg(F, flags);
-    write_8bit_reg(A, result);
+    CPU.REGS[F] = flags;
+    CPU.REGS[A] = result;
 }
 
-/*
- * Increment instruction
- * Increments byte held by OPERAND
- */
-void inc(uint8_t operand, uint8_t operand_type) {
-    uint8_t result = 0;
-    uint8_t source = 0;
-    switch (operand_type) {
-        case REG_8BIT:
-            source = read_8bit_reg(operand);
-            result = source + 1;
-            write_8bit_reg(operand, result);
-            break;
-        case REG_16BIT:
-            REGS[operand] = REGS[operand] + 1;
-            return;
-        case REG_POINTER:
-            source = read_memory(REGS[operand]);
-            result = source + 1;
-            write_memory(REGS[operand], result);
-            break;
-        default:
-            perror("Invalid Operand in INC");
-    }
+///*
+// * Increment instruction
+// * Increments byte held by OPERAND
+// */
+//void inc(uint8_t operand, uint8_t operand_type) {
+//    uint8_t result = 0;
+//    uint8_t source = 0;
+//    switch (operand_type) {
+//        case REG_8BIT:
+//            source = read_8bit_reg(operand);
+//            result = source + 1;
+//            write_8bit_reg(operand, result);
+//            break;
+//        case REG_16BIT:
+//            REGS[operand] = REGS[operand] + 1;
+//            return;
+//        case REG_POINTER:
+//            source = read_memory(REGS[operand]);
+//            result = source + 1;
+//            write_memory(REGS[operand], result);
+//            break;
+//        default:
+//            perror("Invalid Operand in INC");
+//    }
+//
+//    uint8_t flags = CARRY_FLAG(read_8bit_reg(F));
+//    if ((source & 0x000F) == 0x000F) {
+//        flags |= HALF_CARRY_BIT;
+//    }
+//    flags |= get_zero_flag(result);
+//    write_8bit_reg(F, flags);
+//}
 
-    uint8_t flags = CARRY_FLAG(read_8bit_reg(F));
-    if ((source & 0x000F) == 0x000F) {
+void inc_8bit(uint8_t dest) {
+    uint8_t source = CPU.DATA_BUS;
+    uint8_t result = source + 1;
+    uint8_t flags = CARRY_FLAG(CPU.REGS[F]);
+
+    if (FIRST_NIBBLE(source) == 0x0F) {
         flags |= HALF_CARRY_BIT;
     }
     flags |= get_zero_flag(result);
-    write_8bit_reg(F, flags);
-
-
+    if (dest == HL) {
+        CPU.DATA_BUS = result;
+        write_memory2();
+    }
+    else {
+        CPU.REGS[dest] = result;
+    }
+    CPU.REGS[F] = flags;
 }
 
-/*
- * Decrement instruction
- * Decrements byte held by OPERAND
- */
-void dec(uint8_t operand, uint8_t operand_type) {
-    uint8_t result;
-    uint16_t source_val ;
-    switch (operand_type) {
-        case REG_8BIT:
-            source_val = read_8bit_reg(operand);
-            result = source_val - 1;
-            write_8bit_reg(operand, result);
-            break;
-        case REG_16BIT:
-            REGS[operand] = REGS[operand] - 1;
-            return;
-        case REG_POINTER:
-            source_val = read_memory(REGS[operand]);
-            result = source_val - 1;
-            write_memory(REGS[operand], result);
-            break;
-        default:
-            result = 0;
-            source_val = 0;
-            perror("Invalid operand in DEC");
-    }
-    //Borrow from bit four
-    uint8_t flags = CARRY_FLAG(read_8bit_reg(F)) | NEGATIVE_BIT;
-    if (FIRST_NIBBLE(source_val) == 0) {
+void inc_16bit(uint8_t dest) {
+    write_16bit_reg(dest, read_16bit_reg(dest) + 1);
+}
+
+void dec_16bit(uint8_t dest) {
+    write_16bit_reg(dest, read_16bit_reg(dest) - 1);
+}
+
+///*
+// * Decrement instruction
+// * Decrements byte held by OPERAND
+// */
+//void dec(uint8_t operand, uint8_t operand_type) {
+//    uint8_t result;
+//    uint16_t source_val ;
+//    switch (operand_type) {
+//        case REG_8BIT:
+//            source_val = read_8bit_reg(operand);
+//            result = source_val - 1;
+//            write_8bit_reg(operand, result);
+//            break;
+//        case REG_16BIT:
+//            REGS[operand] = REGS[operand] - 1;
+//            return;
+//        case REG_POINTER:
+//            source_val = read_memory(REGS[operand]);
+//            result = source_val - 1;
+//            write_memory(REGS[operand], result);
+//            break;
+//        default:
+//            result = 0;
+//            source_val = 0;
+//            perror("Invalid operand in DEC");
+//    }
+//    //Borrow from bit four
+//    uint8_t flags = CARRY_FLAG(read_8bit_reg(F)) | NEGATIVE_BIT;
+//    if (FIRST_NIBBLE(source_val) == 0) {
+//        flags |= HALF_CARRY_BIT;
+//    }
+//    flags |= get_zero_flag(result);
+//    write_8bit_reg(F, flags);
+//}
+
+void dec_8bit(uint8_t dest) {
+    uint8_t source = CPU.DATA_BUS;
+    uint8_t result = source - 1;
+
+    uint8_t flags = CARRY_FLAG(CPU.REGS[F]);
+    if ((source & 0x000F) == 0x00) {
         flags |= HALF_CARRY_BIT;
     }
     flags |= get_zero_flag(result);
-    write_8bit_reg(F, flags);
+
+    CPU.REGS[dest] = result;
+    CPU.REGS[F] = flags;
 }
 
 ///////////////////////////////////////// LOGIC INSTRUCTIONS /////////////////////////////////////////
