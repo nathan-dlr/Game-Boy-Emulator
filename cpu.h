@@ -151,9 +151,6 @@ void cpl();
 void scf();
 void ccf();
 void halt();
-void and(uint8_t operand, uint8_t operand_type);
-void xor(uint8_t operand, uint8_t operand_type);
-void or(uint8_t operand, uint8_t operand_type);
 void call(uint8_t cc, uint16_t address);
 void jp(uint8_t cc, bool is_hl);
 void jr(uint8_t cc);
@@ -193,5 +190,10 @@ void dec_8bit(uint8_t dest);
 void add_16bit(uint8_t source);
 void add_sp_e8(uint8_t cycle);
 void inc_16bit(uint8_t dest);
+void dec_16bit(uint8_t dest);
+//8-bit logic
+void and(uint8_t operand_type);
+void or(uint8_t operand_type);
+void xor(uint8_t operand_type);
 
 #endif //GB_EMU_CPU_H

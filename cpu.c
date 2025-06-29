@@ -291,7 +291,7 @@ void ld_sp_hl() {
  * Depending on operand, result will be stored in either accumulator, HL, or SP
  * Zero, carry, and half-carry flags are set
  */
-//void add_8bit(uint16_t operand, uint8_t operand_type) {
+//void add(uint16_t operand, uint8_t operand_type) {
 //    uint16_t result;
 //    uint8_t accumulator = read_8bit_reg(A);
 //    uint8_t new_flags = 0x00;
@@ -595,12 +595,16 @@ void dec_8bit(uint8_t dest) {
  * Zero and half-carry flags are set
  * Takes in either 8bit reg, 8bit const, or register pointer (HL)
 */
-void and(uint8_t operand, uint8_t operand_type) {
-    uint8_t source_val = get_8bit_operand(operand, operand_type);
-    uint8_t result = read_8bit_reg(A) & source_val;
+void and(uint8_t operand_type) {
+    if (operand_type == IMM_8BIT) {
+        read_next_byte();
+        return;
+    }
+    uint8_t source_val = CPU.DATA_BUS;
+    uint8_t result = CPU.REGS[A] & source_val;
 
-    write_8bit_reg(A, result);
-    write_8bit_reg(F, get_zero_flag(result) | HALF_CARRY_BIT);
+    CPU.REGS[A] = result;
+    CPU.REGS[F] = get_zero_flag(result) | HALF_CARRY_BIT;
 }
 
 /*
@@ -609,12 +613,16 @@ void and(uint8_t operand, uint8_t operand_type) {
  * Zero flag is set
  * Takes in either 8bit reg, 8bit const, or register pointer (HL)
 */
-void or(uint8_t operand, uint8_t operand_type) {
-    uint8_t source_val = get_8bit_operand(operand, operand_type);
-    uint8_t result = read_8bit_reg(A) | source_val;
-    write_8bit_reg(A, result);
+void or(uint8_t operand_type) {
+    if (operand_type == IMM_8BIT) {
+        read_next_byte();
+        return;
+    }
+    uint8_t source_val = CPU.DATA_BUS;
+    uint8_t result = CPU.REGS[A] | source_val;
 
-    write_8bit_reg(F, get_zero_flag((uint32_t) result));
+    CPU.REGS[A] = result;
+    CPU.REGS[F] = get_zero_flag(result);
 }
 
 /*
@@ -623,22 +631,25 @@ void or(uint8_t operand, uint8_t operand_type) {
  * Zero flag is set
  * Takes in either 8bit reg, 8bit const, or register pointer (HL)
 */
-void xor(uint8_t operand, uint8_t operand_type) {
-    uint8_t source_val = get_8bit_operand(operand, operand_type);
-    uint8_t result = read_8bit_reg(A) ^ source_val;
-    write_8bit_reg(A, result);
+void xor(uint8_t operand_type) {
+    if (operand_type == IMM_8BIT) {
+        read_next_byte();
+        return;
+    }
+    uint8_t source_val = CPU.DATA_BUS;
+    uint8_t result = CPU.REGS[A] ^ source_val;
 
-    write_8bit_reg(F, get_zero_flag((uint32_t) result));
+   CPU.REGS[A] = result;
+   CPU.REGS[F] = get_zero_flag(result);
 }
-
 
 /*
  * Complement accumulator instruction
  * Replaces value in accumulator with its complement
  */
 void cpl() {
-    write_8bit_reg(A, ~read_8bit_reg(A));
-    write_8bit_reg(F, SET_BIT(NEGATIVE_BIT | HALF_CARRY_BIT, read_8bit_reg(F)));
+    CPU.REGS[A] = ~CPU.REGS[A];
+    CPU.REGS[F] = SET_BIT(NEGATIVE_BIT | HALF_CARRY_BIT, CPU.REGS[F]);
 }
 
 ///////////////////////////////////////// BIT FLAG INSTRUCTIONS /////////////////////////////////////////

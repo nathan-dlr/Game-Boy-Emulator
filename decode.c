@@ -228,7 +228,7 @@ static void inc_or_dec(uint8_t opcode) {
         uint8_t bit_three = GET_BIT_THREE(opcode);
         uint8_t bits_four_five = GET_BITS_FOUR_FIVE(opcode);
         operand = REGISTER_PAIRS_DT[bits_four_five];
-        bit_three ? dec(operand, REG_16BIT) : inc_16bit(operand);
+        bit_three ? dec_16bit(operand) : inc_16bit(operand);
     }
     //operand is 8 bit register or byte pointed to by HL
     else {
@@ -353,13 +353,13 @@ static void alu(uint8_t opcode) {
             sbc(operand_type);
             return;
         case 4:
-            and(operand, operand_type);
+            and(operand_type);
             return;
         case 5:
-            xor(operand, operand_type);
+            xor(operand_type);
             return;
         case 6:
-            or(operand, operand_type);
+            or(operand);
             return;
         case 7:
             cp(operand_type);
