@@ -132,20 +132,6 @@ void execute_next_instruction();
 
 void nop(uint8_t opcode);
 void stop();
-void inc(uint8_t operand, uint8_t operand_type);
-void dec(uint8_t operand, uint8_t operand_type);
-void rl(uint8_t source_reg, bool reg_8bit);
-void rla();
-void rlc(uint8_t source_reg, bool reg_8bit);
-void rlca();
-void rr(uint8_t source_reg, bool reg_8bit);
-void rra();
-void rrc(uint8_t source_reg, bool reg_8bit);
-void rrca();
-void sla(uint8_t source_reg, bool reg_8bit);
-void sra(uint8_t source_reg, bool reg_8bit);
-void swap(uint8_t source_reg, bool reg_8bit);
-void srl(uint8_t source_reg, bool reg_8bit);
 void daa();
 void cpl();
 void scf();
@@ -161,15 +147,12 @@ void ei();
 void pop(uint8_t reg_16);
 void push(uint8_t reg_16);
 void rst(uint8_t opcode);
-void bit(uint8_t bit_num, uint8_t source_reg, bool reg_8bit);
-void res(uint8_t bit_num, uint8_t source_reg, bool reg_8bit);
-void set(uint8_t bit_num, uint8_t source_reg, bool reg_8bit);
 
 uint8_t read_next_byte();
 uint16_t read_16bit_reg(uint8_t reg_pair);
 uint16_t write_16bit_reg(uint8_t reg_pair, uint16_t value);
 
-//LD
+//Loads
 void ld_r8_imm8(uint8_t dest);
 void ld_rW_imm8(uint8_t load_a);
 void ld_r8_addr_bus(uint8_t dest);
@@ -195,5 +178,23 @@ void dec_16bit(uint8_t dest);
 void and(uint8_t operand_type);
 void or(uint8_t operand_type);
 void xor(uint8_t operand_type);
+//Bit flags instructions
+void bit(uint8_t bit_num);
+void res(uint8_t opcode);
+void set(uint8_t opcode);
+//Bit shift instructions
+void rl(uint8_t source_reg);
+void rla();
+void rlc(uint8_t source_reg);
+void rlca();
+void rr(uint8_t source_reg);
+void rra();
+void rrc(uint8_t source_reg);
+void rrca();
+void sla(uint8_t source_reg);
+void sra(uint8_t source_reg);
+void srl(uint8_t source_reg);
+void swap(uint8_t source_reg);
+//Jumps and subroutine instructions
 
 #endif //GB_EMU_CPU_H

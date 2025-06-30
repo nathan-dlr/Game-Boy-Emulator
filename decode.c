@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include "decode.h"
 #include "cpu.h"
 #include "gb.h"
 
@@ -28,7 +29,6 @@ static void push_call_nop(uint8_t opcode);
 static void cb_prefixed_ops(uint8_t opcode);
 
 //TODO CONSIDER CHANGING TO CONTROL.C
-//TODO CONSIDER LOAD REG ON BUS FUNC
 
 /*
  * DISASSEMBLY TABLES
@@ -51,6 +51,10 @@ static opcode_func decode_lookup[5][8] = {
 
 typedef void (*rot_shift_func)(uint8_t, bool);
 static rot_shift_func rotation_shift_ops[8] = {rlc, rrc, rl ,rr, sla, sra, swap, srl};
+
+uint8_t get_reg_dt(uint8_t index) {
+    return REGISTERS_DT[index];
+}
 /*
  * Gets indexes for decode lookup table using OPCODE and jumps to that function
  * Algorithm described in "DECODING Game Boy Z80 OPCODES" by Scott Mansell
@@ -359,7 +363,7 @@ static void alu(uint8_t opcode) {
             xor(operand_type);
             return;
         case 6:
-            or(operand);
+            or(operand_type);
             return;
         case 7:
             cp(operand_type);
@@ -505,26 +509,35 @@ static void push_call_nop(uint8_t opcode) {
 }
 
 static void cb_prefixed_ops(uint8_t opcode) {
-    opcode = fetch_byte();
+    opcode = read_next_byte();
     uint8_t first_octal_dig = GET_FIRST_OCTAL_DIGIT(opcode);
     uint8_t bit_num = GET_SECOND_OCTAL_DIGIT(opcode);
     uint8_t reg = GET_THIRD_OCTAL_DIGIT(opcode);
-    bool reg_8bit = reg != 6;
+    bool write_mem = false;
+    if (reg == 6) {
+        CPU.ADDRESS_BUS = read_16bit_reg(HL);
+        read_memory2();
+        write_mem = true;
+    }
     switch (first_octal_dig) {
         case 0:
             //TODO change "bit_num" to something that makes more sense?
-            rotation_shift_ops[bit_num](REGISTERS_DT[reg], reg_8bit);
-            return;
+            rotation_shift_ops[bit_num](REGISTERS_DT[reg]);
+            break;
         case 1:
-            bit(bit_num, REGISTERS_DT[reg], reg_8bit);
-            return;
+            CPU.DATA_BUS = CPU.REGS[REGISTERS_DT[reg]];
+            bit(bit_num);
+            break;
         case 2:
-            res(bit_num, REGISTERS_DT[reg], reg_8bit);
-            return;
+            res(opcode);
+            break;
         case 3:
-            set(bit_num, REGISTERS_DT[reg], reg_8bit);
-            return;
+            set(opcode);
+            break;
         default:
             perror("Invalid opcode in cb_prefixed_op");
+    }
+    if (write_mem) {
+        write_memory2();
     }
 }
