@@ -57,14 +57,6 @@
 #define SVBK 0xFF70
 #define IE 0xFFFF
 
-typedef struct CPU_STRUCT {
-    uint16_t REGS[14];
-    uint8_t IR;
-    uint8_t DATA_BUS;
-    uint16_t ADDRESS_BUS;
-} CPU_STRUCT;
-
-static CPU_STRUCT CPU;
 
 enum REGISTERS_16BIT {
     AF,
@@ -112,45 +104,26 @@ enum CC {
     NONE
 };
 
-enum ACTION {
-    DEST_INC,
-    DEST_DEC,
-    SOURCE_INC,
-    SOURCE_DEC
-};
-
 enum CPU_STATES {
     RUNNING,
     HALTED
 };
 
-uint16_t get_debug_pc();
+typedef struct CPU_STRUCT {
+    uint16_t REGS[14];
+    uint8_t IME;
+    uint8_t DATA_BUS;
+    uint16_t ADDRESS_BUS;
+    enum CPU_STATES STATE;
+} CPU_STRUCT;
+
+static CPU_STRUCT CPU;
 void cpu_init();
-uint8_t fetch_byte();
-uint16_t fetch_word();
 void execute_next_instruction();
 
-void nop(uint8_t opcode);
-void stop();
-void daa();
-void cpl();
-void scf();
-void ccf();
-void halt();
-void call(uint8_t cc, uint16_t address);
-void jp(uint8_t cc, bool is_hl);
-void jr(uint8_t cc);
-void ret(uint8_t cc);
-void reti();
-void di();
-void ei();
-void pop(uint8_t reg_16);
-void push(uint8_t reg_16);
-void rst(uint8_t opcode);
-
-uint8_t read_next_byte();
+void read_next_byte();
 uint16_t read_16bit_reg(uint8_t reg_pair);
-uint16_t write_16bit_reg(uint8_t reg_pair, uint16_t value);
+void write_16bit_reg(uint8_t reg_pair, uint16_t value);
 
 //Loads
 void ld_r8_imm8(uint8_t dest);
@@ -178,6 +151,7 @@ void dec_16bit(uint8_t dest);
 void and(uint8_t operand_type);
 void or(uint8_t operand_type);
 void xor(uint8_t operand_type);
+void cpl();
 //Bit flags instructions
 void bit(uint8_t bit_num);
 void res(uint8_t opcode);
@@ -196,5 +170,29 @@ void sra(uint8_t source_reg);
 void srl(uint8_t source_reg);
 void swap(uint8_t source_reg);
 //Jumps and subroutine instructions
+void call_cycle3(uint8_t cc);
+void call_writes(uint8_t cycle_num);
+void jp_cycle3(uint8_t cc);
+void jp(uint8_t is_hl);
+void jr_cycle2(uint8_t cc);
+void jr();
+void ret_eval_cc(uint8_t cc);
+void ret(uint8_t is_reti);
+void rst(uint8_t cycle);
+//Carry Flag Instructions
+void scf();
+void ccf();
+//Stack Manipulation
+void pop_reads(uint8_t cycle);
+void pop_load(uint8_t reg_16);
+void push(uint8_t cycle);
+//Interrupt-related instructions
+void di();
+void ei();
+void halt();
+//Miscellaneous instructions
+void daa();
+void nop(uint8_t opcode);
+void stop();
 
 #endif //GB_EMU_CPU_H

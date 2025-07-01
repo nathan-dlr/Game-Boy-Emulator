@@ -26,9 +26,8 @@ static void conditional_jumps(uint8_t opcode);
 static void assorted_ops(uint8_t opcode);
 static void conditional_calls(uint8_t opcode);
 static void push_call_nop(uint8_t opcode);
+static void rst_instr(uint8_t opcode);
 static void cb_prefixed_ops(uint8_t opcode);
-
-//TODO CONSIDER CHANGING TO CONTROL.C
 
 /*
  * DISASSEMBLY TABLES
@@ -45,11 +44,11 @@ static opcode_func decode_lookup[5][8] = {
         {relative_jumps,load_immediate_add_16bit,indirect_loading,inc_or_dec,inc_or_dec,inc_or_dec,ld_8bit,ops_on_accumulator},
         {ld_or_halt,nop,nop,nop,nop,nop,nop,nop},
         {alu,alu,alu,alu,alu,alu,alu,alu},
-        {mem_mapped_ops, pop_various, conditional_jumps,assorted_ops, conditional_calls, push_call_nop, alu,     rst},
+        {mem_mapped_ops, pop_various, conditional_jumps,assorted_ops, conditional_calls, push_call_nop, alu, rst_instr},
         {cb_prefixed_ops,nop,nop,nop,nop,nop,nop,nop}
 };
 
-typedef void (*rot_shift_func)(uint8_t, bool);
+typedef void (*rot_shift_func)(uint8_t);
 static rot_shift_func rotation_shift_ops[8] = {rlc, rrc, rl ,rr, sla, sra, swap, srl};
 
 uint8_t get_reg_dt(uint8_t index) {
@@ -59,7 +58,8 @@ uint8_t get_reg_dt(uint8_t index) {
  * Gets indexes for decode lookup table using OPCODE and jumps to that function
  * Algorithm described in "DECODING Game Boy Z80 OPCODES" by Scott Mansell
 */
-void decode(uint8_t opcode) {
+void decode() {
+    uint8_t opcode = CPU.DATA_BUS;
     bool CB_prefix = opcode == PREFIX;
     uint8_t first_octal_dig = GET_FIRST_OCTAL_DIGIT(opcode);
     uint8_t second_octal_dig = GET_SECOND_OCTAL_DIGIT(opcode);
@@ -112,10 +112,12 @@ static void relative_jumps(uint8_t opcode) {
             stop();
             return;
         case 3:
-            jr(NONE);
-            break;
+            jr_cycle2(NONE);
+            jr();
+            return;
         default:
-            jr(CC[second_octal_dig - 4]);
+            jr_cycle2(CC[second_octal_dig - 4]);
+            jr();
             break;
     }
 }
@@ -377,7 +379,10 @@ static void mem_mapped_ops(uint8_t opcode) {
     uint8_t second_octal_dig = GET_SECOND_OCTAL_DIGIT(opcode);
     switch (second_octal_dig) {
         default:
-            ret(CC[second_octal_dig]);
+            ret_eval_cc(CC[second_octal_dig]);
+            ld_r8_imm8(Z);
+            ld_r8_imm8(Z);
+            ret();
             return;
         //LDH [n16],A - 3 cycles: decode -> read_next_byte -> write_memory
         case 4:
@@ -412,18 +417,25 @@ static void pop_various(uint8_t opcode) {
     uint8_t bit_three = GET_BIT_THREE(opcode);
     uint8_t bits_four_five = GET_BITS_FOUR_FIVE(opcode);
     if (!bit_three) {
-        pop(REGISTER_PAIRS2_DT[bits_four_five]);
+        pop_reads(1);
+        pop_reads(2);
+        pop_load(REGISTER_PAIRS2_DT[bits_four_five]);
     }
     else {
         switch (bits_four_five) {
             case 0:
-                ret(NONE);
+                ret_eval_cc(NONE);
+                ld_r8_imm8(Z);
+                ld_r8_imm8(W);
+                ret(0);
                 return;
             case 1:
-                reti();
+                ld_r8_imm8(Z);
+                ld_r8_imm8(W);
+                ret(1);
                 return;
             case 2:
-                jp(NONE, true);
+                jp(1);
                 return;
             //LD SP,HL - 2 cycles : decode -> ld_sp_hl
             case 3:
@@ -440,13 +452,15 @@ static void conditional_jumps(uint8_t opcode) {
     uint8_t second_octal_dig = GET_SECOND_OCTAL_DIGIT(opcode);
     switch (second_octal_dig) {
         default:
-            jp(CC[second_octal_dig], false);
+            ld_r8_imm8(Z);
+            jp_cycle3(CC[second_octal_dig]);
+            jp(0);
             return;
         //LDH [C],A - 2 cycles: decode -> write_memory
         case 4:
             //ld(C, A, REG_OFFSET, REG_8BIT);
-            CPU.ADDRESS_BUS = 0xFF00 + read_8bit_reg(C); //TODO DOESNT WORK YET
-            CPU.DATA_BUS = read_8bit_reg(A);
+            CPU.ADDRESS_BUS = 0xFF00 + CPU.REGS[C];
+            CPU.DATA_BUS = CPU.REGS[A];
             write_memory2();
             return;
         //LD [n16],A - 4 cycles: decode -> read_next_byte -> read_next_byte -> write_memory
@@ -459,7 +473,7 @@ static void conditional_jumps(uint8_t opcode) {
         //LDH A,[C] - 2 cycles: decode -> read_memory/ld_r8_bus
         case 6:
             //ld(A, C, REG_8BIT, REG_OFFSET);
-            CPU.ADDRESS_BUS = 0xFF00 + read_8bit_reg(C); //TODO DOESNT WORK YET
+            CPU.ADDRESS_BUS = 0xFF00 + CPU.REGS[C];
             ld_r8_addr_bus(A);
             return;
         //LD A,[n16] - 4 cycles: decode -> read_next_byte -> read_next_byte -> read_memory/ld_r8_bus
@@ -476,7 +490,9 @@ static void assorted_ops(uint8_t opcode) {
     uint8_t second_octal_dig = GET_SECOND_OCTAL_DIGIT(opcode);
     switch (second_octal_dig) {
         case 0:
-            jp(NONE, false);
+            ld_r8_imm8(Z);
+            jp_cycle3(NONE);
+            jp(0);
             return;
         case 6:
             di();
@@ -494,18 +510,44 @@ static void assorted_ops(uint8_t opcode) {
 static void conditional_calls(uint8_t opcode) {
     uint8_t second_octal_dig = GET_SECOND_OCTAL_DIGIT(opcode);
     //instructions whose opcode's second octal digit are 4-7 are usually implemented in the Z80 but not on the gbz80
-    second_octal_dig < 4 ? call(CC[second_octal_dig], fetch_word()) : nop(opcode);
+    if (second_octal_dig < 4) {
+        ld_r8_imm8(Z);
+        call_cycle3(CC[second_octal_dig]);
+        dec_16bit(SP);
+        call_writes(5);
+        call_writes(6);
+    }
+    else {
+        nop(opcode);
+    }
 }
 
 static void push_call_nop(uint8_t opcode) {
     uint8_t bit_three = GET_BIT_THREE(opcode);
     uint8_t bits_four_five = GET_BITS_FOUR_FIVE(opcode);
     if (!bit_three) {
-        push(REGISTER_PAIRS2_DT[bits_four_five]);
+        write_16bit_reg(WZ, REGISTER_PAIRS2_DT[bits_four_five]);
+        push(2);
+        push(3);
+        push(4);
+    }
+    else if (bits_four_five) {
+        nop(opcode);
     }
     else {
-        bits_four_five == 0 ? call(NONE, fetch_word()) : nop(opcode);
+        ld_r8_imm8(Z);
+        call_cycle3(NONE);
+        dec_16bit(SP);
+        call_writes(5);
+        call_writes(6);
     }
+}
+
+static void rst_instr(uint8_t opcode) {
+    CPU.DATA_BUS = GET_SECOND_OCTAL_DIGIT(opcode) * 8;
+    rst(2);
+    rst(3);
+    rst(4);
 }
 
 static void cb_prefixed_ops(uint8_t opcode) {
