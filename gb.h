@@ -1,11 +1,11 @@
 #ifndef GB_EMU_GB_H
 #define GB_EMU_GB_H
 
+#define UNUSED_VAL 0x00
 
 uint8_t* MEMORY;
-uint8_t read_memory(uint16_t address);
-void write_memory(uint16_t address, uint8_t value);
-uint8_t read_memory2();
-void write_memory2();
+void read_memory(uint8_t UNUSED);
+void write_memory(uint8_t UNUSED);
+void free_resources();
 
 #endif //GB_EMU_GB_H

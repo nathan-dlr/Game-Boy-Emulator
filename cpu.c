@@ -69,7 +69,7 @@ void execute_next_cycle() {
             free_resources();
             exit(0);
         }
-        if (CPU->REGS[A] == 0x31 && CPU->REGS[F] == 0x60 && read_16bit_reg(PC) == 0xc061 && read_16bit_reg(SP) == 0xdfe9) {
+        if (CPU->REGS[A] == 0x12 && CPU->REGS[F] == 0x00 && read_16bit_reg(PC) == 0xDEF8 && read_16bit_reg(SP) == 0x0000 && MEMORY[read_16bit_reg(PC)] == 0xE8 && MEMORY[read_16bit_reg(PC) + 1] == 0x01) {
             CPU->REGS[A] += 0;
         }
         read_next_byte();
@@ -256,15 +256,20 @@ void ld_imm16_sp(uint8_t byte_num) {
  * Loads the value of sp plus an offset into HL and set flags
  */
 void ld_hl_sp8(uint8_t cycle) {
-    uint16_t sp;
+    int8_t result;
     switch (cycle) {
         case 2:
             read_next_byte();
+            CPU->REGS[Z] = CPU->DATA_BUS;
             return;
         case 3:
-            sp = read_16bit_reg(SP);
-            write_16bit_reg(HL, sp + CPU->DATA_BUS);
-            CPU->REGS[F] = get_add_flags_byte(CPU->REGS[HL], sp);
+            result = (int8_t) CPU->REGS[Z] + CPU->REGS[SP0];
+            CPU->REGS[L] = (uint8_t)result;
+            CPU->REGS[F] = get_add_flags_byte((uint8_t)result, CPU->DATA_BUS);
+
+            result = CPU->REGS[SP1] + (CARRY_FLAG(CPU->REGS[F]) >> 4);
+            result += (CPU->REGS[Z] & 0x80) ? 0xFF : 0x00;
+            CPU->REGS[H] = (uint8_t)result;
             return;
         default:
             perror("Invalid cycle number in ld_hl_sp8");
@@ -322,42 +327,44 @@ void add_A_8bit(uint8_t is_imm) {
 void add_HL_16bit(uint8_t source) {
     uint8_t dest;
     uint8_t source_val;
+    uint8_t flags;
+    uint8_t result;
     if (source % 2 == 0) {
         dest = CPU->REGS[H];
         source_val = CPU->REGS[source] + (CARRY_FLAG(CPU->REGS[F]) >> 4);
+        result = source_val + dest;
+        flags = ZERO_FLAG(CPU->REGS[F]);
+        flags |= get_add_flags_byte(source_val, CPU->REGS[source]);
+        flags |= get_add_flags_byte(result, dest);
+        CPU->REGS[H] = result;
     }
     else {
         dest = CPU->REGS[L];
         source_val = CPU->REGS[source];
-    }
-    uint8_t result = source_val + dest;
-    uint8_t flags = ZERO_FLAG(CPU->REGS[F]) | get_add_flags_byte(result, dest);
-
-    CPU->REGS[F] = flags;
-    if (source % 2 == 0) {
-        CPU->REGS[H] = result;
-    }
-    else {
+        result = source_val + dest;
+        flags = ZERO_FLAG(CPU->REGS[F]) | get_add_flags_byte(result, dest);
         CPU->REGS[L] = result;
     }
+
+    CPU->REGS[F] = flags;
 }
 
 void add_sp_e8(uint8_t cycle) {
-    uint8_t result;
+    int8_t result;
     switch (cycle) {
         case 2:
-            read_memory(UNUSED_VAL);
+            read_next_byte();
             CPU->REGS[Z] = CPU->DATA_BUS;
             return;
         case 3:
-            result = Z + CPU->REGS[SP0];
-            CPU->REGS[L] = result;
-            CPU->REGS[F] = get_add_flags_byte(result, CPU->REGS[SP0]);
+            result = (int8_t) CPU->REGS[Z] + CPU->REGS[SP0];
+            CPU->REGS[SP0] = (uint8_t)result;
+            CPU->REGS[F] = get_add_flags_byte((uint8_t)result, CPU->REGS[Z]);
             return;
         case 4:
             result = CPU->REGS[SP1] + (CARRY_FLAG(CPU->REGS[F]) >> 4);
-            result += (CPU->REGS[Z] | 0x80) ? 0xFF : 0x00;
-            CPU->REGS[H] = result;
+            result += (CPU->REGS[Z] & 0x80) ? 0xFF : 0x00;
+            CPU->REGS[SP1] = result;
             return;
         default:
             perror("Invalid input in ADD HL SP+e8");
