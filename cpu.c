@@ -5,7 +5,7 @@
 #include "gb.h"
 #include "cpu.h"
 #include "decode.h"
-#include "queue.c"
+#include "queue.h"
 #define ZERO_FLAG(f) (f & 0x80)
 #define SUBTRACTION_FLAG(f) (f & 0x40)
 #define HALF_CARRY_FLAG(f) (f & 0x20)
@@ -16,57 +16,95 @@
 #define CARRY_BIT 0x10
 #define SET_BIT(bit, value) (bit | value)
 #define CLEAR_BIT(bit, value) (~bit & value)
-#define BYTE 0
-#define WORD 1
 #define FIRST_NIBBLE(x) (x & 0x000F)
 
 /* Interrupt Enable and Interrupt Flag */
 #define IE 0xFFFF
 #define IF 0xFF0F
 
+static FILE* log;
+
 void cpu_init() {
+    CPU = malloc(sizeof(CPU_STRUCT));
+    INSTR_QUEUE = malloc(sizeof(func_queue));
     queue_init(INSTR_QUEUE);
-    CPU.REGS[AF] = 0x01B0;
-    CPU.REGS[BC] = 0x0013;
-    CPU.REGS[DE] = 0x00D8;
-    CPU.REGS[HL] = 0x014D;
-    CPU.REGS[SP] = 0xFFFE;
-    CPU.REGS[PC] = 0x0100;
-    CPU.STATE = RUNNING;
-    CPU.IME = false;
+    write_16bit_reg(AF, 0x01B0);
+    write_16bit_reg(BC, 0x0013);
+    write_16bit_reg(DE, 0x00D8);
+    write_16bit_reg(HL, 0x014D);
+    write_16bit_reg(SP, 0xFFFE);
+    write_16bit_reg(PC, 0x0100);
+    CPU->STATE = RUNNING;
+    CPU->IME = false;
+    log =  fopen("logfile", "w");
 }
 
-//this will change to tick function
-//if decode we queue up more
-void execute_next_instruction() {
+/*
+ * Executes the next instruction by checking to see
+ * if the INSTR_QUEUE is empty, if so it decodes another
+ * instruction, if not it executes the next instruction
+ * in the queue
+ */
+void execute_next_cycle() {
     if (is_empty(INSTR_QUEUE)) {
+        fprintf(log, "A:%02X F:%02X B:%02X C:%02X D:%02X E:%02X H:%02X L:%02X SP:%04X PC:%04X PCMEM:%02X,%02X,%02X,%02X\n",
+                CPU->REGS[A],
+                CPU->REGS[F],
+                CPU->REGS[B],
+                CPU->REGS[C],
+                CPU->REGS[D],
+                CPU->REGS[E],
+                CPU->REGS[H],
+                CPU->REGS[L],
+                read_16bit_reg(SP),
+                read_16bit_reg(PC),
+                MEMORY[read_16bit_reg(PC)],
+                MEMORY[read_16bit_reg(PC) + 1],
+                MEMORY[read_16bit_reg(PC) + 2],
+                MEMORY[read_16bit_reg(PC) + 3]);
+        fseek(log, 0, SEEK_END);
+
+        if (ftell(log) >= 0x10000000) {
+            fclose(log);
+            free_resources();
+            exit(0);
+        }
+        if (CPU->REGS[A] == 0x31 && CPU->REGS[F] == 0x60 && read_16bit_reg(PC) == 0xc061 && read_16bit_reg(SP) == 0xdfe9) {
+            CPU->REGS[A] += 0;
+        }
         read_next_byte();
         decode();
     }
     else {
-        func_and_param_wrapper* next_func = pop(INSTR_QUEUE);
+        const func_and_param_wrapper* next_func = queue_pop(INSTR_QUEUE);
         next_func->func(next_func->parameter);
     }
 }
 
 ///////////////////////////////////////// GENERAL HELPER FUNCTIONS /////////////////////////////////////////
 
+/*
+ * Reads and returns the 16bit register indicated by REG_PAIR
+ */
 uint16_t read_16bit_reg(uint8_t reg_pair) {
-    return (CPU.REGS[reg_pair * 2] >> 8) | CPU.REGS[(reg_pair * 2) + 1];
+    return (CPU->REGS[reg_pair * 2] << 8) | CPU->REGS[(reg_pair * 2) + 1];
 }
 
+/*
+ * Writes VALUE to 16bit register indicated by REG_PAIR
+ */
 void write_16bit_reg(uint8_t reg_pair, uint16_t value) {
-    CPU.REGS[reg_pair * 2] = (uint8_t) value >> 8;
-    CPU.REGS[(reg_pair * 2) + 1] = (uint8_t) value;
+    CPU->REGS[reg_pair * 2] = (uint8_t) (value >> 8);
+    CPU->REGS[(reg_pair * 2) + 1] = (uint8_t) value;
 }
 
 /*
  * Puts PC onto address bus and reads that byte onto the data bus
  */
 void read_next_byte() {
-    CPU.ADDRESS_BUS = CPU.REGS[PC];
-    read_memory2();
-    CPU.REGS[PC]++;
+    CPU->ADDRESS_BUS = read_16bit_reg(PC);
+    read_memory(UNUSED_VAL);
+    write_16bit_reg(PC, read_16bit_reg(PC) + 1);
 }
 
 ///////////////////////////////////////// FLAG SETTERS /////////////////////////////////////////
@@ -74,7 +112,7 @@ void read_next_byte() {
 /*
  * Sets zero flag if RESULT is zero, otherwise clears zero flag
 */
-static uint8_t get_zero_flag(uint16_t result) {
+static uint8_t get_zero_flag(uint8_t result) {
     if (result == 0) {
         return ZERO_BIT;
     }
@@ -88,21 +126,6 @@ static uint8_t get_zero_flag(uint16_t result) {
 static uint8_t get_add_flags_byte(uint8_t sum, uint8_t augend) {
     uint8_t flags = 0x00;
     if ((FIRST_NIBBLE(sum)) < (FIRST_NIBBLE(augend))) {
-        flags |= HALF_CARRY_BIT;
-    }
-    if (sum < augend) {
-        flags |= CARRY_BIT;
-    }
-    return flags;
-}
-
-/*
- * Uses the SUM of a word addition operation and the augend of the
- * operation before it was performed to set flags
-*/
-static uint8_t get_add_flags_word(uint16_t sum, uint16_t augend) {
-    uint8_t flags = 0x00;
-    if ((sum & 0x0FFF) < (augend & 0x0FFF)) {
         flags |= HALF_CARRY_BIT;
     }
     if (sum < augend) {
@@ -161,23 +184,22 @@ static uint8_t get_rot_flags(uint8_t result, bool set_zero, bool carry_flag_new)
 //LD A,[HLD] - 2 cycles: decode -> read_memory/ld_r8_bus
 //LD SP,n16 - 3 cycles: decode -> read_next_byte/ld_r8_bus -> read_next_byte/ld_r8_bus
 //LD [n16],SP - 5 cycles: decode -> read_next_byte -> read_next_byte -> write_memory -> write_memory
-//LD HL,SP+e8 - 3 cycles: decode -> read_next_byte -> add to low byte of sp and store in L -> add any carry from low byte add_8bit and store in H
+//LD HL,SP+e8 - 3 cycles: decode -> read_next_byte -> add to low byte of sp and store in L -> add any carry from low byte add_A_8bit and store in H
 //LD SP,HL - 2 cycles : decode -> ld_sp_hl
 
-//ADD A,r8 - 1 cycle: decode/add_8bit
-//ADD A,[HL] - 2 cycles: decode/set address bus -> read byte -> add_8bit
-//ADD A,n8 - 2 cycles: decode -> read_next_byte/add_8bit
-//ADD HL,r16 - 2 cycles: decode -> add first bit -> add_8bit second bit
-//ADD HL,SP - 2 cycles: decode -> add first bit -> add_8bit second bit
+//ADD A,r8 - 1 cycle: decode/add_A_8bit
+//ADD A,[HL] - 2 cycles: decode/set address bus -> read byte -> add_A_8bit
+//ADD A,n8 - 2 cycles: decode -> read_next_byte/add_A_8bit
+//ADD HL,r16 - 2 cycles: decode -> add first bit -> add_A_8bit second bit
+//ADD HL,SP - 2 cycles: decode -> add first bit -> add_A_8bit second bit
 //ADD SP,e8 -
 
-//TODO PUT PC ON ADDR BUS BEFORE OR DURING FETCH NEXT BYTE?
 /*
  * Loads byte at [PC] into 8bit register indicated by DEST
  */
 void ld_r8_imm8(uint8_t dest) {
     read_next_byte();
-    CPU.REGS[dest] = CPU.DATA_BUS;
+    CPU->REGS[dest] = CPU->DATA_BUS;
 }
 
 /*
@@ -186,10 +208,10 @@ void ld_r8_imm8(uint8_t dest) {
  */
 void ld_rW_imm8(uint8_t load_a) {
     read_next_byte();
-    CPU.REGS[W] = CPU.DATA_BUS;
-    CPU.ADDRESS_BUS = read_16bit_reg(WZ);
+    CPU->REGS[W] = CPU->DATA_BUS;
+    CPU->ADDRESS_BUS = read_16bit_reg(WZ);
     if (load_a) {
-        CPU.DATA_BUS = CPU.REGS[A];
+        CPU->DATA_BUS = CPU->REGS[A];
     }
 }
 
@@ -197,79 +219,126 @@ void ld_rW_imm8(uint8_t load_a) {
  * Loads [ADDR_BUS] into 8bit register indicated by DEST
  */
 void ld_r8_addr_bus(uint8_t dest) {
-    read_memory2();
-    CPU.REGS[dest] = CPU.DATA_BUS;
+    read_memory(UNUSED_VAL);
+    CPU->REGS[dest] = CPU->DATA_BUS;
 }
 
+/*
+ * Loads data from CPU->DATA_BUS into 8bit reg indicated by DEST
+ */
 void ld_r8_data_bus(uint8_t dest) {
-    CPU.REGS[dest] = CPU.DATA_BUS;
+    CPU->REGS[dest] = CPU->DATA_BUS;
 }
 
 /*
  * Used for LDH with an immediate value
  * Adds the immediate value to 0xFF00 and puts it on the ADDR_BUS
  */
-void ldh_imm8() {
+void ldh_imm8(uint8_t UNUSED) {
+    (void)UNUSED;
     read_next_byte();
-    CPU.ADDRESS_BUS = 0xFF00 + CPU.DATA_BUS;
+    CPU->ADDRESS_BUS = 0xFF00 + CPU->DATA_BUS;
+    CPU->DATA_BUS = CPU->REGS[A];
 }
 
 /*
- * Loads
+ * Loads a byte indicated by the address at WZ into either SP0 or SP1
+ * Called twice
  */
 void ld_imm16_sp(uint8_t byte_num) {
-    CPU.ADDRESS_BUS = read_16bit_reg(WZ);
-    CPU.DATA_BUS = byte_num == 0 ? CPU.REGS[SP0] : CPU.REGS[SP1];
-    write_memory2();
+    CPU->ADDRESS_BUS = read_16bit_reg(WZ);
+    CPU->DATA_BUS = byte_num == 0 ? CPU->REGS[SP0] : CPU->REGS[SP1];
+    write_memory(UNUSED_VAL);
     write_16bit_reg(WZ, read_16bit_reg(WZ) + 1);
 }
 
-void ld_hl_sp8() {
-    uint16_t sp = read_16bit_reg(SP);
-    write_16bit_reg(HL, sp + CPU.DATA_BUS);
-    CPU.REGS[F] = get_add_flags_byte(CPU.REGS[HL], sp);
+/*
+ * Loads the value of sp plus an offset into HL and set flags
+ */
+void ld_hl_sp8(uint8_t cycle) {
+    uint16_t sp;
+    switch (cycle) {
+        case 2:
+            read_next_byte();
+            return;
+        case 3:
+            sp = read_16bit_reg(SP);
+            write_16bit_reg(HL, sp + CPU->DATA_BUS);
+            CPU->REGS[F] = get_add_flags_byte(CPU->REGS[HL], sp);
+            return;
+        default:
+            perror("Invalid cycle number in ld_hl_sp8");
+    }
 }
 
-void ld_sp_hl() {
+/*
+ * Loads HL into SP
+ */
+void ld_sp_hl(uint8_t UNUSED) {
+    (void)UNUSED;
     write_16bit_reg(SP, read_16bit_reg(HL));
+}
+
+/*
+ * Load an immediate value to memory location pointed to by hl
+ */
+void ld_hl_imm8(uint8_t cycle) {
+    switch (cycle) {
+        case 2:
+            read_next_byte();
+            CPU->ADDRESS_BUS = HL;
+            break;
+        case 3:
+            write_memory(UNUSED_VAL);
+            break;
+        default:
+            perror("Invalid cycle number for ld_hl_imm8");
+    }
 }
 
 ///////////////////////////////////////// ARITHMETIC INSTRUCTIONS  /////////////////////////////////////////
 
-void add_8bit(uint8_t operand_type) {
-    if (operand_type == IMM_8BIT) {
+/*
+ * Adds value in DATA_BUS to accumulator and sets flags
+ * If operand type is an immediate value, it reads the next byte from PC before adding
+ */
+void add_A_8bit(uint8_t is_imm) {
+    if (is_imm) {
         read_next_byte();
         return;
     }
-    uint8_t source_val = CPU.DATA_BUS;
-    uint8_t accumulator = CPU.REGS[A];
+    uint8_t source_val = CPU->DATA_BUS;
+    uint8_t accumulator = CPU->REGS[A];
     uint8_t result = source_val + accumulator;
     uint8_t flags = get_add_flags_byte(result, accumulator) | get_zero_flag(result);
 
-    CPU.REGS[A] = result;
-    CPU.REGS[F] = flags;
+    CPU->REGS[A] = result;
+    CPU->REGS[F] = flags;
 }
 
-void add_16bit(uint8_t source) {
+/*
+ * Adds
+ */
+void add_HL_16bit(uint8_t source) {
     uint8_t dest;
     uint8_t source_val;
     if (source % 2 == 0) {
-        dest = CPU.REGS[H];
-        source_val = CPU.REGS[source] + (CARRY_FLAG(CPU.REGS[F]) >> 4);
+        dest = CPU->REGS[H];
+        source_val = CPU->REGS[source] + (CARRY_FLAG(CPU->REGS[F]) >> 4);
     }
     else {
-        dest = CPU.REGS[L];
-        source_val = CPU.REGS[source];
+        dest = CPU->REGS[L];
+        source_val = CPU->REGS[source];
     }
     uint8_t result = source_val + dest;
-    uint8_t flags = get_add_flags_byte(result, dest);
+    uint8_t flags = ZERO_FLAG(CPU->REGS[F]) | get_add_flags_byte(result, dest);
 
-    CPU.REGS[F] = flags;
+    CPU->REGS[F] = flags;
     if (source % 2 == 0) {
-        CPU.REGS[H] = result;
+        CPU->REGS[H] = result;
     }
     else {
-        CPU.REGS[L] = result;
+        CPU->REGS[L] = result;
     }
 }
 
@@ -277,18 +346,18 @@ void add_sp_e8(uint8_t cycle) {
     uint8_t result;
     switch (cycle) {
         case 2:
-            read_memory2();
-            CPU.REGS[Z] = CPU.DATA_BUS;
+            read_memory(UNUSED_VAL);
+            CPU->REGS[Z] = CPU->DATA_BUS;
             return;
         case 3:
-            result = Z + CPU.REGS[SP0];
-            CPU.REGS[L] = result;
-            CPU.REGS[F] = get_add_flags_byte(result, CPU.REGS[SP0]);
+            result = Z + CPU->REGS[SP0];
+            CPU->REGS[L] = result;
+            CPU->REGS[F] = get_add_flags_byte(result, CPU->REGS[SP0]);
             return;
         case 4:
-            result = CPU.REGS[SP1] + (CARRY_FLAG(CPU.REGS[F]) >> 4);
-            result += (CPU.REGS[Z] | 0x80) ? 0xFF : 0x00;
-            CPU.REGS[H] = result;
+            result = CPU->REGS[SP1] + (CARRY_FLAG(CPU->REGS[F]) >> 4);
+            result += (CPU->REGS[Z] | 0x80) ? 0xFF : 0x00;
+            CPU->REGS[H] = result;
             return;
         default:
             perror("Invalid input in ADD HL SP+e8");
@@ -301,22 +370,22 @@ void add_sp_e8(uint8_t cycle) {
  * Takes in either 8bit reg, 8bit const, or register pointer (HL)
  * Zero, carry, and half-carry flags are set
  */
-void adc(uint8_t operand_type) {
-    if (operand_type == IMM_8BIT) {
+void adc(uint8_t is_imm) {
+    if (is_imm) {
         read_next_byte();
         return;
     }
-    uint8_t carry_bit = CARRY_FLAG(CPU.REGS[F]) ? 0x01 : 0x00;
-    uint8_t source_val = CPU.DATA_BUS;
-    uint8_t accumulator = CPU.REGS[A];
+    uint8_t carry_bit = CARRY_FLAG(CPU->REGS[F]) ? 0x01 : 0x00;
+    uint8_t source_val = CPU->DATA_BUS;
+    uint8_t accumulator = CPU->REGS[A];
 
     uint8_t intermediate = accumulator + carry_bit;
     uint8_t result = source_val + intermediate;
     uint8_t flags = get_add_flags_byte(intermediate, accumulator);
     flags |= (get_add_flags_byte(result, intermediate) | get_zero_flag(result));
 
-    CPU.REGS[F] = flags;
-    CPU.REGS[A] = result;
+    CPU->REGS[F] = flags;
+    CPU->REGS[A] = result;
 }
 
 /*
@@ -324,17 +393,17 @@ void adc(uint8_t operand_type) {
  * Results are stored in Flag Register - zero, negative, carry, and half-carry flags are set
  * Takes in either 8bit reg, 8bit const, or register pointer (HL)
  */
-void cp(uint8_t operand_type) {
-    if (operand_type == IMM_8BIT) {
+void cp(uint8_t is_imm) {
+    if (is_imm) {
         read_next_byte();
         return;
     }
-    uint8_t source_val = CPU.DATA_BUS;
-    uint8_t accumulator = CPU.REGS[A];
+    uint8_t source_val = CPU->DATA_BUS;
+    uint8_t accumulator = CPU->REGS[A];
     uint16_t result = accumulator - source_val;
     uint8_t flags = get_subtraction_flags(accumulator, source_val) | get_zero_flag(result);
 
-    CPU.REGS[F] = flags;
+    CPU->REGS[F] = flags;
 }
 
 /*
@@ -343,19 +412,18 @@ void cp(uint8_t operand_type) {
  * Zero, negative, carry, and half-carry flags are set
  * Takes in either 8bit reg, 8bit const, or register pointer (HL)
  */
-//TODO WHY IS RESULT 16 BITS? test after everything is passing
-void sub(uint8_t operand_type) {
-    if (operand_type == IMM_8BIT) {
+void sub(uint8_t is_imm) {
+    if (is_imm) {
         read_next_byte();
         return;
     }
-    uint8_t source_val = CPU.DATA_BUS;
-    uint8_t accumulator = CPU.REGS[A];
-    uint16_t result = accumulator - source_val;
+    uint8_t source_val = CPU->DATA_BUS;
+    uint8_t accumulator = CPU->REGS[A];
+    uint8_t result = accumulator - source_val;
     uint8_t flags = get_subtraction_flags(accumulator, source_val) | get_zero_flag(result);
 
-    CPU.REGS[F] = flags;
-    CPU.REGS[A] = result;
+    CPU->REGS[F] = flags;
+    CPU->REGS[A] = result;
 }
 
 /*
@@ -364,41 +432,43 @@ void sub(uint8_t operand_type) {
  * Zero, negative, carry, and half-carry flags are set
  * Takes in either 8bit reg, 8bit const, or register pointer (HL)
  */
-void sbc(uint8_t operand_type) {
-    if (operand_type == IMM_8BIT) {
+void sbc(uint8_t is_imm) {
+    if (is_imm) {
         read_next_byte();
         return;
     }
-    uint8_t source_val = CPU.DATA_BUS;
-    uint8_t accumulator = CPU.REGS[A];
-    uint8_t carry_bit = CARRY_FLAG(CPU.REGS[F]) ? 0x01 : 0x00;
+    uint8_t source_val = CPU->DATA_BUS;
+    uint8_t accumulator = CPU->REGS[A];
+    uint8_t carry_bit = CARRY_FLAG(CPU->REGS[F]) ? 0x01 : 0x00;
 
     uint8_t intermediate = accumulator - source_val;
     uint8_t result = intermediate - carry_bit;
     uint8_t flags = get_subtraction_flags(accumulator, source_val);
     flags |= get_subtraction_flags(intermediate, carry_bit) | get_zero_flag(result);
 
-    CPU.REGS[F] = flags;
-    CPU.REGS[A] = result;
+    CPU->REGS[F] = flags;
+    CPU->REGS[A] = result;
 }
 
-void inc_8bit(uint8_t dest) {
-    uint8_t source = CPU.DATA_BUS;
+void inc_8bit(uint8_t reg_index) {
+    uint8_t reg = get_reg_dt(reg_index);
+    uint8_t source = reg_index != 6 ? CPU->REGS[reg] : CPU->DATA_BUS;
     uint8_t result = source + 1;
-    uint8_t flags = CARRY_FLAG(CPU.REGS[F]);
+    uint8_t flags = CARRY_FLAG(CPU->REGS[F]);
 
+    flags |= get_zero_flag(result);
     if (FIRST_NIBBLE(source) == 0x0F) {
         flags |= HALF_CARRY_BIT;
     }
-    flags |= get_zero_flag(result);
-    if (dest == HL) {
-        CPU.DATA_BUS = result;
-        write_memory2();
+    if (reg_index != 6) {
+        CPU->REGS[reg] = result;
     }
     else {
-        CPU.REGS[dest] = result;
+        CPU->DATA_BUS = result;
+        CPU->ADDRESS_BUS = read_16bit_reg(HL);
+        write_memory(UNUSED_VAL);
     }
-    CPU.REGS[F] = flags;
+    CPU->REGS[F] = flags;
 }
 
 void inc_16bit(uint8_t dest) {
@@ -409,18 +479,25 @@ void dec_16bit(uint8_t dest) {
     write_16bit_reg(dest, read_16bit_reg(dest) - 1);
 }
 
-void dec_8bit(uint8_t dest) {
-    uint8_t source = CPU.DATA_BUS;
+void dec_8bit(uint8_t reg_index) {
+    uint8_t reg = get_reg_dt(reg_index);
+    uint8_t source = reg_index != 6 ? CPU->REGS[reg] : CPU->DATA_BUS;
     uint8_t result = source - 1;
+    uint8_t flags = CARRY_FLAG(CPU->REGS[F]) | NEGATIVE_BIT;
 
-    uint8_t flags = CARRY_FLAG(CPU.REGS[F]);
     if ((source & 0x000F) == 0x00) {
         flags |= HALF_CARRY_BIT;
     }
     flags |= get_zero_flag(result);
-
-    CPU.REGS[dest] = result;
-    CPU.REGS[F] = flags;
+    if (reg_index != 6) {
+        CPU->REGS[reg] = result;
+    }
+    else {
+        CPU->DATA_BUS = result;
+        CPU->ADDRESS_BUS = read_16bit_reg(HL);
+        write_memory(UNUSED_VAL);
+    }
+    CPU->REGS[F] = flags;
 }
 
 ///////////////////////////////////////// LOGIC INSTRUCTIONS /////////////////////////////////////////
@@ -431,16 +508,16 @@ void dec_8bit(uint8_t dest) {
  * Zero and half-carry flags are set
  * Takes in either 8bit reg, 8bit const, or register pointer (HL)
 */
-void and(uint8_t operand_type) {
-    if (operand_type == IMM_8BIT) {
+void and(uint8_t is_imm) {
+    if (is_imm) {
         read_next_byte();
         return;
     }
-    uint8_t source_val = CPU.DATA_BUS;
-    uint8_t result = CPU.REGS[A] & source_val;
+    uint8_t source_val = CPU->DATA_BUS;
+    uint8_t result = CPU->REGS[A] & source_val;
 
-    CPU.REGS[A] = result;
-    CPU.REGS[F] = get_zero_flag(result) | HALF_CARRY_BIT;
+    CPU->REGS[A] = result;
+    CPU->REGS[F] = get_zero_flag(result) | HALF_CARRY_BIT;
 }
 
 /*
@@ -449,16 +526,16 @@ void and(uint8_t operand_type) {
  * Zero flag is set
  * Takes in either 8bit reg, 8bit const, or register pointer (HL)
 */
-void or(uint8_t operand_type) {
-    if (operand_type == IMM_8BIT) {
+void or(uint8_t is_imm) {
+    if (is_imm) {
         read_next_byte();
         return;
     }
-    uint8_t source_val = CPU.DATA_BUS;
-    uint8_t result = CPU.REGS[A] | source_val;
+    uint8_t source_val = CPU->DATA_BUS;
+    uint8_t result = CPU->REGS[A] | source_val;
 
-    CPU.REGS[A] = result;
-    CPU.REGS[F] = get_zero_flag(result);
+    CPU->REGS[A] = result;
+    CPU->REGS[F] = get_zero_flag(result);
 }
 
 /*
@@ -467,16 +544,16 @@ void or(uint8_t operand_type) {
  * Zero flag is set
  * Takes in either 8bit reg, 8bit const, or register pointer (HL)
 */
-void xor(uint8_t operand_type) {
-    if (operand_type == IMM_8BIT) {
+void xor(uint8_t is_imm) {
+    if (is_imm) {
         read_next_byte();
         return;
     }
-    uint8_t source_val = CPU.DATA_BUS;
-    uint8_t result = CPU.REGS[A] ^ source_val;
+    uint8_t source_val = CPU->DATA_BUS;
+    uint8_t result = CPU->REGS[A] ^ source_val;
 
-   CPU.REGS[A] = result;
-   CPU.REGS[F] = get_zero_flag(result);
+   CPU->REGS[A] = result;
+   CPU->REGS[F] = get_zero_flag(result);
 }
 
 /*
@@ -484,8 +561,8 @@ void xor(uint8_t operand_type) {
  * Replaces value in accumulator with its complement
  */
 void cpl() {
-    CPU.REGS[A] = ~CPU.REGS[A];
-    CPU.REGS[F] = SET_BIT(NEGATIVE_BIT | HALF_CARRY_BIT, CPU.REGS[F]);
+    CPU->REGS[A] = ~CPU->REGS[A];
+    CPU->REGS[F] = SET_BIT(NEGATIVE_BIT | HALF_CARRY_BIT, CPU->REGS[F]);
 }
 
 ///////////////////////////////////////// BIT FLAG INSTRUCTIONS /////////////////////////////////////////
@@ -496,14 +573,14 @@ void cpl() {
  * Source reg is either 8-bit reg or byte pointed to by HL, indicated by REG_8BIT
  */
 void bit(uint8_t bit_num) {
-    uint8_t source_val = CPU.DATA_BUS;
+    uint8_t source_val = CPU->DATA_BUS;
     bool set = source_val & (0x0001 << bit_num);
 
-    uint8_t flags = CARRY_FLAG(CPU.REGS[F]) | HALF_CARRY_BIT;
+    uint8_t flags = CARRY_FLAG(CPU->REGS[F]) | HALF_CARRY_BIT;
     if (!set) {
         flags |= ZERO_BIT;
     }
-    CPU.REGS[F] = flags;
+    CPU->REGS[F] = flags;
 }
 
 /*
@@ -516,12 +593,12 @@ void res(uint8_t opcode) {
     uint8_t bit_num = (opcode & 0x38) >> 3;
     uint8_t bit = 0x01 << bit_num;
     if (source_reg != HL) {
-        CPU.REGS[source_reg] = CLEAR_BIT(bit, CPU.REGS[source_reg]);
+        CPU->REGS[source_reg] = CLEAR_BIT(bit, CPU->REGS[source_reg]);
     }
     //RES u3,[HL] - 4 cycles: decode -> read [hl] -> set bit in Z reg -> write memory
     else {
-        CPU.REGS[Z] = CLEAR_BIT(bit, CPU.DATA_BUS);
-        CPU.DATA_BUS = CPU.REGS[Z];
+        CPU->REGS[Z] = CLEAR_BIT(bit, CPU->DATA_BUS);
+        CPU->DATA_BUS = CPU->REGS[Z];
     }
 }
 
@@ -535,11 +612,11 @@ void set(uint8_t opcode) {
     uint8_t bit_num = (opcode & 0x38) >> 3;
     uint8_t bit = 0x01 << bit_num;
     if (source_reg != HL) {
-        CPU.REGS[source_reg] = SET_BIT(bit, CPU.REGS[source_reg]);
+        CPU->REGS[source_reg] = SET_BIT(bit, CPU->REGS[source_reg]);
     }
     else {
-        CPU.REGS[Z] = SET_BIT(bit, CPU.DATA_BUS);
-        CPU.DATA_BUS = CPU.REGS[Z];
+        CPU->REGS[Z] = SET_BIT(bit, CPU->DATA_BUS);
+        CPU->DATA_BUS = CPU->REGS[Z];
     }
 }
 
@@ -550,19 +627,22 @@ void set(uint8_t opcode) {
  * Rotates bits in SOURCE_REG left, through the carry flag
  * Source reg is either 8-bit reg or byte pointed to by HL, indicated by REG_8BIT
  */
-void rl(uint8_t source_reg) {
-    uint8_t source_val = source_reg != HL ? CPU.REGS[source_reg] : CPU.DATA_BUS;
-    uint8_t carry_flag_old = CARRY_FLAG(CPU.REGS[F]) ? 0x01 : 0x00;
+void rl(uint8_t reg_index) {
+    uint8_t reg = get_reg_dt(reg_index);
+    uint8_t source_val = reg_index != 6 ? CPU->REGS[reg] : CPU->DATA_BUS;
+    uint8_t carry_flag_old = CARRY_FLAG(CPU->REGS[F]) ? 0x01 : 0x00;
     bool carry_flag_new = source_val & 0x80 ? true : false;
     uint8_t new_val = (source_val << 1) | carry_flag_old;
 
-    if (source_reg != HL) {
-        CPU.REGS[source_reg] = new_val;
+    if (reg_index != 6) {
+        CPU->REGS[reg] = new_val;
     }
     else {
-        CPU.DATA_BUS = new_val;
+        CPU->DATA_BUS = new_val;
+        CPU->ADDRESS_BUS = read_16bit_reg(HL);
+        write_memory(UNUSED_VAL);
     }
-    CPU.REGS[F] = get_rot_flags(new_val, true, carry_flag_new);
+    CPU->REGS[F] = get_rot_flags(new_val, true, carry_flag_new);
 }
 
 /*
@@ -571,13 +651,13 @@ void rl(uint8_t source_reg) {
  * Source reg is either 8-bit reg or byte pointed to by HL, indicated by REG_8BIT
  */
 void rla() {
-    uint8_t carry_flag_old = CARRY_FLAG(CPU.REGS[F]) ? 0x01 : 0x00;
-    uint8_t source_val = CPU.REGS[A];
+    uint8_t carry_flag_old = CARRY_FLAG(CPU->REGS[F]) ? 0x01 : 0x00;
+    uint8_t source_val = CPU->REGS[A];
     bool carry_flag_new = source_val & 0x80 ? true : false;
     uint8_t new_val = (source_val << 1) | carry_flag_old;
 
-    CPU.REGS[A] = new_val;
-    CPU.REGS[F] = get_rot_flags(new_val, false, carry_flag_new);
+    CPU->REGS[A] = new_val;
+    CPU->REGS[F] = get_rot_flags(new_val, false, carry_flag_new);
 }
 
 /*
@@ -585,19 +665,22 @@ void rla() {
  * Rotate bits in SOURCE_REG left circularly, from MSB to LSB
  * Source reg is either 8-bit reg or byte pointed to by HL, indicated by REG_8BIT
  */
-void rlc(uint8_t source_reg) {
-    uint8_t source_val = source_reg != HL ? CPU.REGS[source_reg] : CPU.DATA_BUS;
+void rlc(uint8_t reg_index) {
+    uint8_t reg = get_reg_dt(reg_index);
+    uint8_t source_val = reg_index != 6 ? CPU->REGS[reg] : CPU->DATA_BUS;
     bool carry_flag_new = source_val & 0x80 ? true : false;
     uint8_t new_val = source_val << 1;
     new_val |= carry_flag_new ? 0x01 : 0x00;
 
-    if (source_reg != HL) {
-        CPU.REGS[source_reg] = new_val;
+    if (reg_index != 6) {
+        CPU->REGS[reg] = new_val;
     }
     else {
-        CPU.DATA_BUS = new_val;
+        CPU->DATA_BUS = new_val;
+        CPU->ADDRESS_BUS = read_16bit_reg(HL);
+        write_memory(UNUSED_VAL);
     }
-    CPU.REGS[F] = get_rot_flags(new_val, true, carry_flag_new);
+    CPU->REGS[F] = get_rot_flags(new_val, true, carry_flag_new);
 }
 
 /*
@@ -605,13 +688,13 @@ void rlc(uint8_t source_reg) {
  * Rotate bits in accumulator left circularly, from MSB to LSB
  */
 void rlca() {
-    uint8_t source_val = CPU.REGS[A];
+    uint8_t source_val = CPU->REGS[A];
     bool carry_flag_new = source_val & 0x80 ? true : false;
     uint8_t new_val = source_val << 1;
     new_val |= carry_flag_new ? 0x01 : 0x00;
 
-    CPU.REGS[A] = new_val;
-    CPU.REGS[F] = get_rot_flags(new_val, false, carry_flag_new);
+    CPU->REGS[A] = new_val;
+    CPU->REGS[F] = get_rot_flags(new_val, false, carry_flag_new);
 }
 
 /*
@@ -619,20 +702,23 @@ void rlca() {
  * Rotate bits in SOURCE_REG right, through the carry flag
  * Source reg is either 8-bit reg or byte pointed to by HL, indicated by REG_8BIT
  */
-void rr(uint8_t source_reg) {
-    uint8_t source_val = source_reg != HL ? CPU.REGS[source_reg] : CPU.DATA_BUS;
-    uint8_t carry_flag_old = CARRY_FLAG(CPU.REGS[F]) ? 0x01 : 0x00;
+void rr(uint8_t reg_index) {
+    uint8_t reg = get_reg_dt(reg_index);
+    uint8_t source_val = reg_index != 6 ? CPU->REGS[reg] : CPU->DATA_BUS;
+    uint8_t carry_flag_old = CARRY_FLAG(CPU->REGS[F]) ? 0x01 : 0x00;
     bool carry_flag_new = source_val & 0x01 ? true : false;
     uint8_t new_val = (source_val >> 1);
     new_val |= carry_flag_old << 7;
 
-    if (source_reg != HL) {
-        CPU.REGS[source_reg] = new_val;
+    if (reg_index != 6) {
+        CPU->REGS[reg] = new_val;
     }
     else {
-        CPU.DATA_BUS = new_val;
+        CPU->DATA_BUS = new_val;
+        CPU->ADDRESS_BUS = read_16bit_reg(HL);
+        write_memory(UNUSED_VAL);
     }
-    CPU.REGS[F] = get_rot_flags(new_val, true, carry_flag_new);
+    CPU->REGS[F] = get_rot_flags(new_val, true, carry_flag_new);
 }
 
 /*
@@ -641,14 +727,14 @@ void rr(uint8_t source_reg) {
  * SOURCE reg is either 8-bit reg or byte pointed to by HL, indicated by REG_8BIT
  */
 void rra() {
-    uint8_t source_val = CPU.REGS[A];
-    uint8_t carry_flag_old = CARRY_FLAG(CPU.REGS[F]) ? 0x01 : 0x00;
+    uint8_t source_val = CPU->REGS[A];
+    uint8_t carry_flag_old = CARRY_FLAG(CPU->REGS[F]) ? 0x01 : 0x00;
     bool carry_flag_new = source_val & 0x01 ? true : false;
     uint8_t new_val = (source_val >> 1);
     new_val |= carry_flag_old << 7;
 
-    CPU.REGS[A] = new_val;
-    CPU.REGS[F] = get_rot_flags(new_val, false, carry_flag_new);
+    CPU->REGS[A] = new_val;
+    CPU->REGS[F] = get_rot_flags(new_val, false, carry_flag_new);
 }
 
 /*
@@ -656,20 +742,23 @@ void rra() {
  * Rotate bits in SOURCE_REG right, from LSB to MSB
  * Source reg is either 8-bit reg or byte pointed to by HL, indicated by REG_8BIT
  */
-void rrc(uint8_t source_reg) {
-    uint8_t source_val = source_reg != HL ? CPU.REGS[source_reg] : CPU.DATA_BUS;
+void rrc(uint8_t reg_index) {
+    uint8_t reg = get_reg_dt(reg_index);
+    uint8_t source_val = reg_index != 6 ? CPU->REGS[reg] : CPU->DATA_BUS;
     bool carry_flag_new = source_val & 0x01 ? true : false;
     uint8_t new_msb = source_val & 0x0001;
     uint8_t new_val = (source_val >> 1);
     new_val |= new_msb << 7;
 
-    if (source_reg != HL) {
-        CPU.REGS[source_reg] = new_val;
+    if (reg_index != 6) {
+        CPU->REGS[reg] = new_val;
     }
     else {
-        CPU.DATA_BUS = new_val;
+        CPU->DATA_BUS = new_val;
+        CPU->ADDRESS_BUS = read_16bit_reg(HL);
+        write_memory(UNUSED_VAL);
     }
-    CPU.REGS[F] = get_rot_flags(new_val, true, carry_flag_new);
+    CPU->REGS[F] = get_rot_flags(new_val, true, carry_flag_new);
 }
 
 /*
@@ -677,14 +766,14 @@ void rrc(uint8_t source_reg) {
  * Rotate bits in accumulator right, from LSB to MSB
  */
 void rrca() {
-    uint8_t source_val = CPU.REGS[A];
+    uint8_t source_val = CPU->REGS[A];
     bool carry_flag_new = source_val & 0x01 ? true : false;
     uint8_t new_msb = source_val & 0x01;
     uint8_t new_val = (source_val >> 1);
     new_val |= new_msb << 7;
 
-    CPU.REGS[A] = new_val;
-    CPU.REGS[F] = get_rot_flags(new_val, false, carry_flag_new);
+    CPU->REGS[A] = new_val;
+    CPU->REGS[F] = get_rot_flags(new_val, false, carry_flag_new);
 }
 
 /*
@@ -692,18 +781,21 @@ void rrca() {
  * Shift bits in SOURCE_REG left arithmetically
  * Source reg is either 8-bit reg or byte pointed to by HL, indicated by REG_8BIT
  */
-void sla(uint8_t source_reg) {
-    uint8_t source_val = source_reg != HL ? CPU.REGS[source_reg] : CPU.DATA_BUS;
+void sla(uint8_t reg_index) {
+    uint8_t reg = get_reg_dt(reg_index);
+    uint8_t source_val = reg_index != 6 ? CPU->REGS[reg] : CPU->DATA_BUS;
     bool carry_flag_new = source_val & 0x80 ? true : false;
     uint8_t new_val = source_val << 1;
 
-    if (source_reg != HL) {
-        CPU.REGS[source_reg] = new_val;
+    if (reg_index != 6) {
+        CPU->REGS[reg] = new_val;
     }
     else {
-        CPU.DATA_BUS = new_val;
+        CPU->DATA_BUS = new_val;
+        CPU->ADDRESS_BUS = read_16bit_reg(HL);
+        write_memory(UNUSED_VAL);
     }
-    CPU.REGS[F] = get_rot_flags(new_val, true, carry_flag_new);
+    CPU->REGS[F] = get_rot_flags(new_val, true, carry_flag_new);
 }
 
 /*
@@ -711,20 +803,23 @@ void sla(uint8_t source_reg) {
  * Shift bits in SOURCE_REG right arithmetically
  * Source reg is either 8-bit reg or byte pointed to by HL, indicated by REG_8BIT
  */
-void sra(uint8_t source_reg) {
-    uint8_t source_val = source_reg != HL ? CPU.REGS[source_reg] : CPU.DATA_BUS;
+void sra(uint8_t reg_index) {
+    uint8_t reg = get_reg_dt(reg_index);
+    uint8_t source_val = reg_index != 6 ? CPU->REGS[reg] : CPU->DATA_BUS;
     bool carry_flag_new = source_val & 0x01 ? true : false;
     uint8_t new_msb = source_val & 0x80;
     uint8_t new_val = source_val >> 1;
     new_val |= new_msb;
 
-    if (source_reg != HL) {
-        CPU.REGS[source_reg] = new_val;
+    if (reg_index != 6) {
+        CPU->REGS[reg] = new_val;
     }
     else {
-        CPU.DATA_BUS = new_val;
+        CPU->DATA_BUS = new_val;
+        CPU->ADDRESS_BUS = read_16bit_reg(HL);
+        write_memory(UNUSED_VAL);
     }
-    CPU.REGS[F] = get_rot_flags(new_val, true, carry_flag_new);
+    CPU->REGS[F] = get_rot_flags(new_val, true, carry_flag_new);
 }
 
 /*
@@ -732,18 +827,21 @@ void sra(uint8_t source_reg) {
  * Shift bits in SOURCE_REG right logically
  * Source reg is either 8-bit reg or byte pointed to by HL, indicated by REG_8BIT
  */
-void srl(uint8_t source_reg) {
-    uint8_t source_val = source_reg != HL ? CPU.REGS[source_reg] : CPU.DATA_BUS;
+void srl(uint8_t reg_index) {
+    uint8_t reg = get_reg_dt(reg_index);
+    uint8_t source_val = reg_index != 6 ? CPU->REGS[reg] : CPU->DATA_BUS;
     bool carry_flag_new = source_val & 0x01 ? true : false;
     uint8_t new_val = source_val >> 1;
 
-    if (source_reg != HL) {
-        CPU.REGS[source_reg] = new_val;
+    if (reg_index != 6) {
+        CPU->REGS[reg] = new_val;
     }
     else {
-        CPU.DATA_BUS = new_val;
+        CPU->DATA_BUS = new_val;
+        CPU->ADDRESS_BUS = read_16bit_reg(HL);
+        write_memory(UNUSED_VAL);
     }
-    CPU.REGS[F] = get_rot_flags(new_val, true, carry_flag_new);
+    CPU->REGS[F] = get_rot_flags(new_val, true, carry_flag_new);
 }
 
 /*
@@ -751,17 +849,20 @@ void srl(uint8_t source_reg) {
  * Swap the upper 4 bits and the lower 4 bits in SOURCE_REG
  * Source reg is either 8-bit reg or byte pointed to by HL, indicated by REG_8BIT
 */
-void swap(uint8_t source_reg) {
-    uint8_t source_val = source_reg != HL ? CPU.REGS[source_reg] : CPU.DATA_BUS;
+void swap(uint8_t reg_index) {
+    uint8_t reg = get_reg_dt(reg_index);
+    uint8_t source_val = reg_index != 6 ? CPU->REGS[reg] : CPU->DATA_BUS;
     uint8_t new_val = ((source_val & 0x0F) << 4) | ((source_val & 0xF0) >> 4);
 
-    if (source_reg != HL) {
-        CPU.REGS[source_reg] = new_val;
+    if (reg_index != 6) {
+        CPU->REGS[reg] = new_val;
     }
     else {
-        CPU.DATA_BUS = new_val;
+        CPU->DATA_BUS = new_val;
+        CPU->ADDRESS_BUS = read_16bit_reg(HL);
+        write_memory(UNUSED_VAL);
     }
-    CPU.REGS[F] = get_zero_flag(new_val);
+    CPU->REGS[F] = get_zero_flag(new_val);
 }
 
 ///////////////////////////////////////// JUMPS AND SUBROUTINE INSTRUCTIONS /////////////////////////////////////////
@@ -771,11 +872,11 @@ void swap(uint8_t source_reg) {
  * Returns true if condition codes match, false otherwise
  */
 static bool evaluate_condition_codes(uint8_t cc) {
-    uint8_t flags = CPU.REGS[F];
+    uint8_t flags = CPU->REGS[F];
     switch (cc) {
         case NOT_ZERO:
             return (flags | ~ZERO_BIT) == ~ZERO_BIT;
-        case Z:
+        case ZERO:
             return (flags & ZERO_BIT) == ZERO_BIT;
         case NOT_CARRY:
             return (flags | ~CARRY_BIT) == ~CARRY_BIT;
@@ -788,29 +889,31 @@ static bool evaluate_condition_codes(uint8_t cc) {
 
 /*
  * Call Instruction
- * Pushes the address of the instruction after the call on the stack, such that RET can pop it later;
+ * Pushes the address of the instruction after the call on the stack, such that RET can queue_pop it later;
  * then it executes an implicit JP using the address pointed to by ADDRESS
  * Only executes if CC is met
  */
 void call_cycle3(uint8_t cc) {
     read_next_byte();
-    CPU.REGS[W] = CPU.DATA_BUS;
+    CPU->REGS[W] = CPU->DATA_BUS;
     if (!evaluate_condition_codes(cc)) {
-        //TODO pop 2 FUNCTIONS
+        queue_pop(INSTR_QUEUE);
+        queue_pop(INSTR_QUEUE);
+        queue_pop(INSTR_QUEUE);
     }
 }
 
 void call_writes(uint8_t cycle_num) {
     if (cycle_num == 5) {
-        CPU.ADDRESS_BUS = CPU.REGS[SP];
-        CPU.DATA_BUS = CPU.REGS[PC1];
-        write_memory2();
+        CPU->ADDRESS_BUS = read_16bit_reg(SP);
+        CPU->DATA_BUS = CPU->REGS[PC1];
+        write_memory(UNUSED_VAL);
         write_16bit_reg(SP, read_16bit_reg(SP) - 1);
     }
     else {
-        CPU.ADDRESS_BUS = CPU.REGS[SP];
-        CPU.DATA_BUS = CPU.REGS[PC0];
-        write_memory2();
+        CPU->ADDRESS_BUS = read_16bit_reg(SP);
+        CPU->DATA_BUS = CPU->REGS[PC0];
+        write_memory(UNUSED_VAL);
         write_16bit_reg(PC, read_16bit_reg(WZ));
     }
 }
@@ -821,9 +924,9 @@ void call_writes(uint8_t cycle_num) {
  */
 void jp_cycle3(uint8_t cc) {
     read_next_byte();
-    CPU.REGS[W] = CPU.DATA_BUS;
+    CPU->REGS[W] = CPU->DATA_BUS;
     if (!evaluate_condition_codes(cc)) {
-        //TODO pop 1 FUNCTION
+        queue_pop(INSTR_QUEUE);
     }
 }
 
@@ -843,16 +946,17 @@ void jp(uint8_t is_hl) {
  //JR e - 3 cycles -> read memory -> add offset
 void jr_cycle2(uint8_t cc) {
     read_next_byte();
-    CPU.REGS[Z] = CPU.DATA_BUS;
+    CPU->REGS[Z] = CPU->DATA_BUS;
     if (!evaluate_condition_codes(cc)) {
-        //TODO POP 1 function
+        queue_pop(INSTR_QUEUE);
     }
     else {
-        CPU.DATA_BUS = CPU.REGS[Z];
+        CPU->DATA_BUS = CPU->REGS[Z];
     }
 }
-void jr() {
-    write_16bit_reg(PC, read_16bit_reg(PC) + CPU.DATA_BUS);
+void jr(uint8_t UNUSED) {
+    (void)UNUSED;
+    write_16bit_reg(PC, read_16bit_reg(PC) + (int8_t)CPU->DATA_BUS);
 }
 
 /*
@@ -865,17 +969,55 @@ void jr() {
 
 void ret_eval_cc(uint8_t cc) {
     if (!evaluate_condition_codes(cc)) {
-        //TODO POP 2 functions
+        queue_pop(INSTR_QUEUE);
+        queue_pop(INSTR_QUEUE);
+        queue_pop(INSTR_QUEUE);
     }
 }
 
-/*
- * Return from subroutine and enable interrupts
- */
-void ret(uint8_t is_reti) {
-    write_16bit_reg(PC, read_16bit_reg(WZ));
-    if (is_reti) {
-        CPU.IME = 1;
+
+void ret(uint8_t cycle) {
+    switch (cycle) {
+        case 0:
+            CPU->ADDRESS_BUS = read_16bit_reg(SP);
+            read_memory(UNUSED_VAL);
+            CPU->REGS[Z] = CPU->DATA_BUS;
+            write_16bit_reg(SP, read_16bit_reg(SP) + 1);
+            break;
+        case 1:
+            CPU->ADDRESS_BUS = read_16bit_reg(SP);
+            read_memory(UNUSED_VAL);
+            CPU->REGS[W] = CPU->DATA_BUS;
+            write_16bit_reg(SP, read_16bit_reg(SP) + 1);
+            break;
+        case 2:
+            write_16bit_reg(PC, read_16bit_reg(WZ));
+            break;
+        default:
+            perror("Invalid cycle number passed into ret");
+    }
+}
+
+void reti(uint8_t cycle) {
+    switch (cycle) {
+        case 2:
+            CPU->ADDRESS_BUS = read_16bit_reg(SP);
+            read_memory(UNUSED_VAL);
+            CPU->REGS[Z] = CPU->DATA_BUS;
+            write_16bit_reg(SP, read_16bit_reg(SP) + 1);
+            break;
+        case 3:
+            CPU->ADDRESS_BUS = read_16bit_reg(SP);
+            read_memory(UNUSED_VAL);
+            CPU->REGS[W] = CPU->DATA_BUS;
+            write_16bit_reg(SP, read_16bit_reg(SP) + 1);
+            break;
+        case 4:
+            write_16bit_reg(PC, read_16bit_reg(WZ));
+            CPU->IME = 1;
+            break;
+        default:
+            perror("Invalid cycle number passed into reti");
     }
 }
 
@@ -883,18 +1025,21 @@ void rst(uint8_t cycle) {
     switch (cycle) {
         case 2:
             write_16bit_reg(SP, read_16bit_reg(SP) - 1);
-            CPU.REGS[Z] = CPU.DATA_BUS;
+            CPU->REGS[Z] = CPU->DATA_BUS;
             return;
         case 3:
-            CPU.DATA_BUS = CPU.REGS[PC1];
-            CPU.ADDRESS_BUS = CPU.REGS[SP];
-            write_memory2();
+            CPU->DATA_BUS = CPU->REGS[PC1];
+            CPU->ADDRESS_BUS = read_16bit_reg(SP);
+            write_memory(UNUSED_VAL);
             write_16bit_reg(SP, read_16bit_reg(SP) - 1);
             return;
         case 4:
-            CPU.DATA_BUS = CPU.REGS[PC1];
-            CPU.ADDRESS_BUS = CPU.REGS[SP];
-            write_memory2();
+            CPU->DATA_BUS = CPU->REGS[PC1];
+            CPU->ADDRESS_BUS = read_16bit_reg(SP);
+            write_memory(UNUSED_VAL);
+            return;
+        default:
+            perror("Invalid cycle number passed into rst");
     }
 }
 
@@ -904,17 +1049,17 @@ void rst(uint8_t cycle) {
  * Complement Carry Flag
  */
 void ccf() {
-    uint8_t flags = CPU.REGS[F];
+    uint8_t flags = CPU->REGS[F];
     flags = (CARRY_FLAG(flags) ^ CARRY_BIT) | ZERO_FLAG(flags);
-    CPU.REGS[F] = flags;
+    CPU->REGS[F] = flags;
 }
 
 /*
  * Set Carry Flag
  */
 void scf() {
-    uint8_t flags = CARRY_BIT | ZERO_FLAG(CPU.REGS[F]);
-    CPU.REGS[F] = flags;
+    uint8_t flags = CARRY_BIT | ZERO_FLAG(CPU->REGS[F]);
+    CPU->REGS[F] = flags;
 }
 
 ///////////////////////////////////////// STACK MANIPULATION /////////////////////////////////////////
@@ -927,22 +1072,26 @@ void scf() {
 void pop_reads(uint8_t cycle) {
     switch (cycle) {
         case 2:
-            CPU.ADDRESS_BUS = read_16bit_reg(SP);
-            read_memory2();
-            CPU.REGS[Z] = CPU.DATA_BUS;
+            CPU->ADDRESS_BUS = read_16bit_reg(SP);
+            read_memory(UNUSED_VAL);
+            CPU->REGS[Z] = CPU->DATA_BUS;
             write_16bit_reg(SP, read_16bit_reg(SP) + 1);
+            break;
         case 3:
-            CPU.ADDRESS_BUS = read_16bit_reg(SP);
-            read_memory2();
-            CPU.REGS[W] = CPU.DATA_BUS;
+            CPU->ADDRESS_BUS = read_16bit_reg(SP);
+            read_memory(UNUSED_VAL);
+            CPU->REGS[W] = CPU->DATA_BUS;
             write_16bit_reg(SP, read_16bit_reg(SP) + 1);
+            break;
+        default:
+            perror("Invalid cycle number passed into pop_reads");
     }
 }
 
 void pop_load(uint8_t reg_16) {
-    write_16bit_reg(reg_16, WZ);
+    write_16bit_reg(reg_16, read_16bit_reg(WZ));
     if (reg_16 == AF) {
-        CPU.REGS[AF] &= 0xFFF0;
+        CPU->REGS[F] &= 0xFFF0;
     }
 }
 
@@ -950,28 +1099,24 @@ void pop_load(uint8_t reg_16) {
  * Push Instruction
  * Push register whose index is indicated by REG_16 from the stack
  */
-//void push(uint8_t reg_16) {
-//    REGS[SP]--;
-//    write_memory(REGS[SP], (uint8_t) ((REGS[reg_16] & 0xFF00) >> 8));
-//    REGS[SP]--;
-//    write_memory(REGS[SP], (uint8_t) (REGS[reg_16] & 0x00FF));
-//}
-
 void push(uint8_t cycle) {
     switch (cycle) {
         case 2:
             write_16bit_reg(SP, read_16bit_reg(SP) - 1);
             return;
         case 3:
-            CPU.ADDRESS_BUS = read_16bit_reg(SP);
-            CPU.DATA_BUS = Z;
-            write_memory2();
+            CPU->ADDRESS_BUS = read_16bit_reg(SP);
+            CPU->DATA_BUS = CPU->REGS[W];
+            write_memory(UNUSED_VAL);
             write_16bit_reg(SP, read_16bit_reg(SP) - 1);
             return;
         case 4:
-            CPU.ADDRESS_BUS = read_16bit_reg(SP);
-            CPU.DATA_BUS = W;
-            write_memory2();
+            CPU->ADDRESS_BUS = read_16bit_reg(SP);
+            CPU->DATA_BUS = CPU->REGS[Z];
+            write_memory(UNUSED_VAL);
+            return;
+        default:
+            perror("Invalid cycle number passed into push instruction");
             return;
     }
 }
@@ -981,14 +1126,14 @@ void push(uint8_t cycle) {
  * Disable Interrupts
 */
 void di() {
-    CPU.IME = false;
+    CPU->IME = false;
 }
 
 /*
  * Enable Interrupts
 */
 void ei() {
-    CPU.IME = true;
+    CPU->IME = true;
 }
 
 /*
@@ -996,16 +1141,16 @@ void ei() {
  */
 //TODO needs to correctly implement halt
 void halt() {
-    if (CPU.IME) {
-        CPU.STATE = HALTED;
+    if (CPU->IME) {
+        CPU->STATE = HALTED;
     }
 }
 
 ///////////////////////////////////////// MISC. INSTRUCTIONS /////////////////////////////////////////
 
 void daa() {
-    uint8_t accumulator = CPU.REGS[A];
-    uint8_t flags = CPU.REGS[F];
+    uint8_t accumulator = CPU->REGS[A];
+    uint8_t flags = CPU->REGS[F];
     uint8_t new_flags = SUBTRACTION_FLAG(flags) | CARRY_FLAG(flags);
     uint8_t adjustment = 0;
 
@@ -1028,8 +1173,8 @@ void daa() {
     }
     accumulator += adjustment;
     new_flags |= get_zero_flag(accumulator);
-    CPU.REGS[A] = accumulator;
-    CPU.REGS[F] = new_flags;
+    CPU->REGS[A] = accumulator;
+    CPU->REGS[F] = new_flags;
 }
 
 /*
@@ -1037,9 +1182,9 @@ void daa() {
  * Do nothing
  */
 void nop([[maybe_unused]] uint8_t opcode) {
-    CPU.REGS[A] += 0;
+    CPU->REGS[A] += 0;
 }
 
 void stop() {
-    CPU.STATE = HALTED;
+    CPU->STATE = HALTED;
 }
