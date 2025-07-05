@@ -130,8 +130,8 @@ void adc(uint8_t operand_type);
 void cp(uint8_t is_imm);
 void sub(uint8_t is_imm);
 void sbc(uint8_t is_imm);
-void inc_8bit(uint8_t reg);
-void dec_8bit(uint8_t reg);
+void inc_8bit(uint8_t disassembly_table_index);
+void dec_8bit(uint8_t disassembly_table_index);
 //16-bit arithmetic
 void add_HL_16bit(uint8_t source);
 void add_sp_e8(uint8_t cycle);
@@ -147,18 +147,18 @@ void bit(uint8_t bit_num);
 void res(uint8_t opcode);
 void set(uint8_t opcode);
 //Bit shift instructions
-void rl(uint8_t reg_index);
+void rl(uint8_t disassembly_table_index);
 void rla();
-void rlc(uint8_t reg_index);
+void rlc(uint8_t disassembly_table_index);
 void rlca();
-void rr(uint8_t reg_index);
+void rr(uint8_t disassembly_table_index);
 void rra();
-void rrc(uint8_t reg_index);
+void rrc(uint8_t disassembly_table_index);
 void rrca();
-void sla(uint8_t reg_index);
-void sra(uint8_t reg_index);
-void srl(uint8_t reg_index);
-void swap(uint8_t reg_index);
+void sla(uint8_t disassembly_table_index);
+void sra(uint8_t disassembly_table_index);
+void srl(uint8_t disassembly_table_index);
+void swap(uint8_t disassembly_table_index);
 //Jumps and subroutine instructions
 void call_cycle3(uint8_t cc);
 void call_writes(uint8_t cycle_num);
