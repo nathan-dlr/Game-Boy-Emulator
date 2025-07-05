@@ -3,6 +3,7 @@
 #include <string.h>
 #include "gb.h"
 #include "cpu.h"
+#include "queue.h"
 
 #define ROM_SIZE 0x8000
 static void memory_init(const char* file_name);
@@ -10,28 +11,51 @@ static void io_ports_init();
 static void check_sp();
 
 
-//we know it works at least until 0xc018
+void free_resources() {
+    printf("Freeing resources");
+    free(CPU);
+    free(INSTR_QUEUE->functions);
+    free(INSTR_QUEUE);
+    free(MEMORY);
+}
+/*
+ * Main function loop
+ * Initializes memory and CPU then continually executes instructions
+ */
 int main(int argc, char *argv[]) {
     memory_init(argv[1]);
     cpu_init();
     while (true) {
-        execute_next_instruction();
+        execute_next_cycle();
         check_sp();
     }
 }
 
-uint8_t read_memory(uint16_t address) {
+/*
+ * Reads byte at CPU->ADDRESS_BUS onto CPU->DATA_BUS
+ */
+void read_memory(uint8_t UNUSED) {
+    (void)UNUSED;
     //for debugging with gameboy doctor
-    if (address == LY) {
-        return 0x90;
+    if (CPU->ADDRESS_BUS == LY) {
+        CPU->DATA_BUS = 0x90;
+        return;
     }
-    return MEMORY[address];
+    CPU->DATA_BUS = MEMORY[CPU->ADDRESS_BUS];
 }
 
-void write_memory(uint16_t address, uint8_t value) {
-    MEMORY[address] = value;
+/*
+ * Writes byte in CPU->DATA_BUS into the memory location
+ * pointed to by CPU->ADDRESS_BUS
+ */
+void write_memory(uint8_t UNUSED) {
+    (void)UNUSED;
+    MEMORY[CPU->ADDRESS_BUS] = CPU->DATA_BUS;
 }
 
+/*
+ * Opens .gb file and reads it into memory
+ */
 static void memory_init(const char* file_name) {
     MEMORY = malloc(0xFFFF);
     const FILE* gb_game =  fopen(file_name, "rb");
@@ -41,10 +65,17 @@ static void memory_init(const char* file_name) {
             fputs("Error reading file", stderr);
         }
     }
+    else {
+        perror("Couldn't open .gb file");
+        exit(1);
+    }
     fclose(gb_game);
     io_ports_init();
 }
 
+/*
+ * Initializes IO Ports
+ */
 static void io_ports_init() {
     MEMORY[P1] = 0xCF;
     MEMORY[SB] = 0x00;
@@ -89,8 +120,12 @@ static void io_ports_init() {
     MEMORY[WX] = 0x00;
 }
 
-
-void check_sp() {
+/*
+ * Checks the serial transfer control input for if a byte has been written to
+ * the serial transfer data input If so, prints the data and resets serial transfer
+ * control input
+ */
+static void check_sp() {
     if (MEMORY[SC] == 0x81) {
         char c = MEMORY[SB];
 
