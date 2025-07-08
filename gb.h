@@ -4,6 +4,9 @@
 #define UNUSED_VAL 0x00
 
 uint8_t* MEMORY;
+long long CYCLE_COUNT;
+uint16_t increment_every;
+
 void read_memory(uint8_t UNUSED);
 void write_memory(uint8_t UNUSED);
 void free_resources();

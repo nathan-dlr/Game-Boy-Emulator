@@ -22,6 +22,8 @@
 /* Interrupt Enable and Interrupt Flag */
 #define IE 0xFFFF
 #define IF 0xFF0F
+static FILE* log;
+static bool check_interrupts();
 
 void cpu_init() {
     CPU = malloc(sizeof(CPU_STRUCT));
@@ -35,6 +37,8 @@ void cpu_init() {
     write_16bit_reg(PC, 0x0100);
     CPU->STATE = RUNNING;
     CPU->IME = false;
+    CYCLE_COUNT = 0;
+    log = fopen("logfile", "w");
 }
 
 /*
@@ -45,13 +49,73 @@ void cpu_init() {
  */
 void execute_next_cycle() {
     if (is_empty(INSTR_QUEUE)) {
-        read_next_byte();
-        decode();
+        fprintf(log, "A:%02X F:%02X B:%02X C:%02X D:%02X E:%02X H:%02X L:%02X SP:%04X PC:%04X PCMEM:%02X,%02X,%02X,%02X\n",
+                CPU->REGS[A],
+                CPU->REGS[F],
+                CPU->REGS[B],
+                CPU->REGS[C],
+                CPU->REGS[D],
+                CPU->REGS[E],
+                CPU->REGS[H],
+                CPU->REGS[L],
+                read_16bit_reg(SP),
+                read_16bit_reg(PC),
+                MEMORY[read_16bit_reg(PC)],
+                MEMORY[read_16bit_reg(PC) + 1],
+                MEMORY[read_16bit_reg(PC) + 2],
+                MEMORY[read_16bit_reg(PC) + 3]);
+        fseek(log, 0, SEEK_END);
+
+        if (ftell(log) >= 0x10000000) {
+            fclose(log);
+            free_resources();
+        }
+        if (!check_interrupts()) {
+            read_next_byte();
+            decode();
+        }
     }
     else {
         const func_and_param_wrapper* next_func = queue_pop(INSTR_QUEUE);
         next_func->func(next_func->parameter);
     }
+    CYCLE_COUNT++;
+    if (CYCLE_COUNT > 0x10000000) {
+        free_resources();
+    }
+}
+
+static bool check_interrupts() {
+    uint8_t interrupt_flag = MEMORY[IF] & 0x1F;
+    if (!(CPU->IME && interrupt_flag)) {
+        return false;
+    }
+    bool vblank = interrupt_flag & 0x01;
+    bool lcd = interrupt_flag & 0x02;
+    bool timer = interrupt_flag & 0x04;
+    bool serial = interrupt_flag & 0x08;
+    bool joypad = interrupt_flag & 0x10;
+    if (vblank) {
+        CPU->DATA_BUS = 0x40;
+    }
+    else if (lcd) {
+        CPU->DATA_BUS = 0x48;
+    }
+    else if (timer) {
+        CPU->DATA_BUS = 0x50;
+    }
+    else if (serial) {
+        CPU->DATA_BUS = 0x58;
+    }
+    else if (joypad) {
+        CPU->DATA_BUS = 0x60;
+    }
+    queue_push(INSTR_QUEUE, nop, UNUSED_VAL);
+    queue_push(INSTR_QUEUE, nop, UNUSED_VAL);
+    queue_push(INSTR_QUEUE, rst, 2);
+    queue_push(INSTR_QUEUE, rst, 3);
+    queue_push(INSTR_QUEUE, rst, 4);
+    return true;
 }
 
 ///////////////////////////////////////// GENERAL HELPER FUNCTIONS /////////////////////////////////////////

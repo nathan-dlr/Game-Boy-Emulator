@@ -6,9 +6,14 @@
 #include "queue.h"
 
 #define ROM_SIZE 0x8000
+#define TAC_ENABlE(tac) (tac & 0x04)
+#define TAC_CLOCK_SELECT(tac) (tac & 0x03)
+#define DIV_INCREMENT 0x20
+
 static void memory_init(const char* file_name);
 static void io_ports_init();
 static void check_sp();
+static void increment_timers();
 
 
 void free_resources() {
@@ -17,6 +22,7 @@ void free_resources() {
     free(INSTR_QUEUE->functions);
     free(INSTR_QUEUE);
     free(MEMORY);
+    exit(0);
 }
 /*
  * Main function loop
@@ -27,6 +33,7 @@ int main(int argc, char *argv[]) {
     cpu_init();
     while (true) {
         execute_next_cycle();
+        increment_timers();
         check_sp();
     }
 }
@@ -51,6 +58,43 @@ void read_memory(uint8_t UNUSED) {
 void write_memory(uint8_t UNUSED) {
     (void)UNUSED;
     MEMORY[CPU->ADDRESS_BUS] = CPU->DATA_BUS;
+    //TODO can we kmap this?
+    if (CPU->ADDRESS_BUS == TAC) {
+        switch (TAC_CLOCK_SELECT(MEMORY[TAC])) {
+            case 0:
+                increment_every = 256;
+                break;
+            case 1:
+                increment_every = 4;
+                break;
+            case 2:
+                increment_every = 16;
+                break;
+            case 3:
+                increment_every = 64;
+                break;
+            default:
+                perror("Error in write memory");
+        }
+    }
+    if (CPU->ADDRESS_BUS == DIV) {
+        MEMORY[DIV] = 0x00;
+    }
+}
+
+void increment_timers() {
+    if ((CYCLE_COUNT % increment_every == 0) && (TAC_ENABlE(MEMORY[TAC]))) {
+        if (MEMORY[TIMA] != 0xFF) {
+            MEMORY[TIMA]++;
+        }
+        else {
+            MEMORY[TIMA] = MEMORY[TMA];
+            MEMORY[TAC] |= 0x04;
+        }
+    }
+    if (CYCLE_COUNT % DIV_INCREMENT == 0) {
+        MEMORY[DIV]++;
+    }
 }
 
 /*
@@ -118,6 +162,7 @@ static void io_ports_init() {
     MEMORY[OBP1] = 0x00;
     MEMORY[WY] = 0x00;
     MEMORY[WX] = 0x00;
+    increment_every = 0x0100;
 }
 
 /*
