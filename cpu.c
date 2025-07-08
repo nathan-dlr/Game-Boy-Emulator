@@ -18,11 +18,21 @@
 #define CLEAR_BIT(bit, value) (~bit & value)
 #define FIRST_NIBBLE(x) (x & 0x000F)
 #define IS_BYTE_IN_MEM(dt_index) (dt_index == 6)
+#define VBLANK_BIT 0x01
+#define LCD_BIT 0x02
+#define TIMER_BIT 0x04
+#define SERIAL_BIT 0x08
+#define JOYPAD_BIT 0x10
+#define VLANK_VEC 0x40
+#define STAT_VEC 0x48
+#define TIMER_VEC 0x50
+#define SERIAL_VEC 0x58
+#define JOYPAD_VEC 0x60
+
 
 /* Interrupt Enable and Interrupt Flag */
 #define IE 0xFFFF
 #define IF 0xFF0F
-static FILE* log;
 static bool check_interrupts();
 
 void cpu_init() {
@@ -38,7 +48,6 @@ void cpu_init() {
     CPU->STATE = RUNNING;
     CPU->IME = false;
     CYCLE_COUNT = 0;
-    log = fopen("logfile", "w");
 }
 
 /*
@@ -49,28 +58,7 @@ void cpu_init() {
  */
 void execute_next_cycle() {
     if (is_empty(INSTR_QUEUE)) {
-        fprintf(log, "A:%02X F:%02X B:%02X C:%02X D:%02X E:%02X H:%02X L:%02X SP:%04X PC:%04X PCMEM:%02X,%02X,%02X,%02X\n",
-                CPU->REGS[A],
-                CPU->REGS[F],
-                CPU->REGS[B],
-                CPU->REGS[C],
-                CPU->REGS[D],
-                CPU->REGS[E],
-                CPU->REGS[H],
-                CPU->REGS[L],
-                read_16bit_reg(SP),
-                read_16bit_reg(PC),
-                MEMORY[read_16bit_reg(PC)],
-                MEMORY[read_16bit_reg(PC) + 1],
-                MEMORY[read_16bit_reg(PC) + 2],
-                MEMORY[read_16bit_reg(PC) + 3]);
-        fseek(log, 0, SEEK_END);
-
-        if (ftell(log) >= 0x10000000) {
-            fclose(log);
-            free_resources();
-        }
-        if (!check_interrupts()) {
+        if (!check_interrupts() & CPU->STATE == RUNNING) {
             read_next_byte();
             decode();
         }
@@ -86,31 +74,42 @@ void execute_next_cycle() {
 }
 
 static bool check_interrupts() {
-    uint8_t interrupt_flag = MEMORY[IF] & 0x1F;
-    if (!(CPU->IME && interrupt_flag)) {
+    uint8_t interrupt_flag = MEMORY[IF];
+    uint8_t interrupt_enable = MEMORY[IE];
+    uint8_t interrupt_requests = interrupt_flag & interrupt_enable;
+    if (!interrupt_requests) {
         return false;
     }
-    bool vblank = interrupt_flag & 0x01;
-    bool lcd = interrupt_flag & 0x02;
-    bool timer = interrupt_flag & 0x04;
-    bool serial = interrupt_flag & 0x08;
-    bool joypad = interrupt_flag & 0x10;
+    else if (!CPU->IME && interrupt_requests) {
+        CPU->STATE = RUNNING;
+        return false;
+    }
+    CPU->STATE = RUNNING;
+    bool vblank = interrupt_requests & VBLANK_BIT;
+    bool lcd = interrupt_requests & LCD_BIT;
+    bool timer = interrupt_requests & TIMER_BIT;
+    bool serial = interrupt_requests & SERIAL_BIT;
+    bool joypad = interrupt_requests & JOYPAD_BIT;
     if (vblank) {
-        CPU->DATA_BUS = 0x40;
+        CPU->DATA_BUS = VLANK_VEC;
+        MEMORY[IF] = CLEAR_BIT(VBLANK_BIT, interrupt_flag);
     }
     else if (lcd) {
-        CPU->DATA_BUS = 0x48;
+        CPU->DATA_BUS = STAT_VEC;
+        MEMORY[IF] = CLEAR_BIT(STAT_VEC, interrupt_flag);
     }
     else if (timer) {
-        CPU->DATA_BUS = 0x50;
+        CPU->DATA_BUS = TIMER_VEC;
+        MEMORY[IF] = CLEAR_BIT(TIMER_BIT, interrupt_flag);
     }
     else if (serial) {
-        CPU->DATA_BUS = 0x58;
+        CPU->DATA_BUS = SERIAL_VEC;
+        MEMORY[IF] = CLEAR_BIT(SERIAL_BIT, interrupt_flag);
     }
     else if (joypad) {
-        CPU->DATA_BUS = 0x60;
+        CPU->DATA_BUS = JOYPAD_VEC;
+        MEMORY[IF] = CLEAR_BIT(JOYPAD_BIT, interrupt_flag);
     }
-    queue_push(INSTR_QUEUE, nop, UNUSED_VAL);
     queue_push(INSTR_QUEUE, nop, UNUSED_VAL);
     queue_push(INSTR_QUEUE, rst, 2);
     queue_push(INSTR_QUEUE, rst, 3);
@@ -1202,9 +1201,12 @@ void ei() {
 /*
  * Halt
  */
-//TODO needs to correctly implement halt
+//TODO halt bug
 void halt() {
     if (CPU->IME) {
+        CPU->STATE = HALTED;
+    }
+    else if (!(MEMORY[IF] & MEMORY[IE])) {
         CPU->STATE = HALTED;
     }
 }

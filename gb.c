@@ -89,7 +89,7 @@ void increment_timers() {
         }
         else {
             MEMORY[TIMA] = MEMORY[TMA];
-            MEMORY[TAC] |= 0x04;
+            MEMORY[IF] |= 0x04;
         }
     }
     if (CYCLE_COUNT % DIV_INCREMENT == 0) {
