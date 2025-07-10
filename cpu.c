@@ -29,10 +29,6 @@
 #define SERIAL_VEC 0x58
 #define JOYPAD_VEC 0x60
 
-
-/* Interrupt Enable and Interrupt Flag */
-#define IE 0xFFFF
-#define IF 0xFF0F
 static bool check_interrupts();
 
 void cpu_init() {
@@ -60,6 +56,8 @@ void execute_next_cycle() {
     if (is_empty(INSTR_QUEUE)) {
         if (!check_interrupts() & CPU->STATE == RUNNING) {
             read_next_byte();
+            //look for ldh IE 04
+            //
             decode();
         }
     }
@@ -73,23 +71,26 @@ void execute_next_cycle() {
     }
 }
 
+/*
+ * Checks to see if interrupt needs to be serviced, if so, queues up appropriate functions
+ */
 static bool check_interrupts() {
     uint8_t interrupt_flag = MEMORY[IF];
     uint8_t interrupt_enable = MEMORY[IE];
-    uint8_t interrupt_requests = interrupt_flag & interrupt_enable;
-    if (!interrupt_requests) {
+    uint8_t interrupt_requested = interrupt_flag & interrupt_enable;
+    if (!interrupt_requested) {
         return false;
     }
-    else if (!CPU->IME && interrupt_requests) {
+    else if (!CPU->IME && interrupt_requested) {
         CPU->STATE = RUNNING;
         return false;
     }
     CPU->STATE = RUNNING;
-    bool vblank = interrupt_requests & VBLANK_BIT;
-    bool lcd = interrupt_requests & LCD_BIT;
-    bool timer = interrupt_requests & TIMER_BIT;
-    bool serial = interrupt_requests & SERIAL_BIT;
-    bool joypad = interrupt_requests & JOYPAD_BIT;
+    bool vblank = interrupt_requested & VBLANK_BIT;
+    bool lcd = interrupt_requested & LCD_BIT;
+    bool timer = interrupt_requested & TIMER_BIT;
+    bool serial = interrupt_requested & SERIAL_BIT;
+    bool joypad = interrupt_requested & JOYPAD_BIT;
     if (vblank) {
         CPU->DATA_BUS = VLANK_VEC;
         MEMORY[IF] = CLEAR_BIT(VBLANK_BIT, interrupt_flag);

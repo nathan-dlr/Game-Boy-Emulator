@@ -8,12 +8,16 @@
 #define ROM_SIZE 0x8000
 #define TAC_ENABlE(tac) (tac & 0x04)
 #define TAC_CLOCK_SELECT(tac) (tac & 0x03)
-#define DIV_INCREMENT 0x20
+#define DIV_INCREMENT 256
 
 static void memory_init(const char* file_name);
 static void io_ports_init();
 static void check_sp();
 static void increment_timers();
+
+static uint16_t timer_internal_counter;
+static uint16_t div_internal_counter;
+static uint16_t cycles_to_increment_timer;
 
 
 void free_resources() {
@@ -31,6 +35,9 @@ void free_resources() {
 int main(int argc, char *argv[]) {
     memory_init(argv[1]);
     cpu_init();
+    timer_internal_counter = 0;
+    div_internal_counter = 0;
+    cycles_to_increment_timer = 256;
     while (true) {
         execute_next_cycle();
         increment_timers();
@@ -58,20 +65,19 @@ void read_memory(uint8_t UNUSED) {
 void write_memory(uint8_t UNUSED) {
     (void)UNUSED;
     MEMORY[CPU->ADDRESS_BUS] = CPU->DATA_BUS;
-    //TODO can we kmap this?
     if (CPU->ADDRESS_BUS == TAC) {
         switch (TAC_CLOCK_SELECT(MEMORY[TAC])) {
             case 0:
-                increment_every = 256;
+                cycles_to_increment_timer = 256;
                 break;
             case 1:
-                increment_every = 4;
+                cycles_to_increment_timer = 4;
                 break;
             case 2:
-                increment_every = 16;
+                cycles_to_increment_timer = 16;
                 break;
             case 3:
-                increment_every = 64;
+                cycles_to_increment_timer = 64;
                 break;
             default:
                 perror("Error in write memory");
@@ -83,17 +89,22 @@ void write_memory(uint8_t UNUSED) {
 }
 
 void increment_timers() {
-    if ((CYCLE_COUNT % increment_every == 0) && (TAC_ENABlE(MEMORY[TAC]))) {
-        if (MEMORY[TIMA] != 0xFF) {
-            MEMORY[TIMA]++;
-        }
-        else {
-            MEMORY[TIMA] = MEMORY[TMA];
-            MEMORY[IF] |= 0x04;
-        }
-    }
-    if (CYCLE_COUNT % DIV_INCREMENT == 0) {
+    div_internal_counter++;
+    if (div_internal_counter >= DIV_INCREMENT) {
+        div_internal_counter -= DIV_INCREMENT;
         MEMORY[DIV]++;
+    }
+    if (TAC_ENABlE(MEMORY[TAC])) {
+        timer_internal_counter++;
+        while (timer_internal_counter >= cycles_to_increment_timer) {
+            timer_internal_counter -= cycles_to_increment_timer;
+            if (MEMORY[TIMA] != 0xFF) {
+                MEMORY[TIMA]++;
+            } else {
+                MEMORY[TIMA] = MEMORY[TMA];
+                MEMORY[IF] |= 0x04;
+            }
+        }
     }
 }
 
@@ -162,7 +173,6 @@ static void io_ports_init() {
     MEMORY[OBP1] = 0x00;
     MEMORY[WY] = 0x00;
     MEMORY[WX] = 0x00;
-    increment_every = 0x0100;
 }
 
 /*

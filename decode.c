@@ -102,8 +102,8 @@ static void relative_jumps(uint8_t opcode) {
         case 0:
             nop(opcode);
             return;
+        //LD [n16],SP - 5 cycles: decode -> read_next_byte -> read_next_byte -> write_memory -> write_memory
         case 1:
-            //LD [n16],SP - 5 cycles: decode -> read_next_byte -> read_next_byte -> write_memory -> write_memory
             queue_push(INSTR_QUEUE, ld_r8_imm8, Z);
             queue_push(INSTR_QUEUE, ld_rW_imm8, FALSE);
             queue_push(INSTR_QUEUE, ld_imm16_sp, 0);
@@ -112,10 +112,12 @@ static void relative_jumps(uint8_t opcode) {
         case 2:
             stop();
             return;
+        // jr n16 - 3 cycles
         case 3:
             queue_push(INSTR_QUEUE, jr_cycle2, NONE);
             queue_push(INSTR_QUEUE, jr, UNUSED_VAL);
             return;
+        //jr cc n16 - 3 cycles taken/ 2 cycles untaken
         default:
             queue_push(INSTR_QUEUE, jr_cycle2, CC[second_octal_dig - 4]);
             queue_push(INSTR_QUEUE, jr, UNUSED_VAL);
@@ -128,30 +130,54 @@ static void load_immediate_add_16bit(uint8_t opcode) {
     uint8_t bits_four_five = GET_BITS_FOUR_FIVE(opcode);
     execute_func func = bit_three ? &add_HL_16bit : &ld_r8_imm8;
     //ADD HL,r16 - 2 cycles: decode -> add first bit -> add_A_8bit second bit
+    if (bit_three) {
+        switch (bits_four_five) {
+            case 0:
+                add_HL_16bit(C);
+                queue_push(INSTR_QUEUE, add_HL_16bit, B);
+                break;
+            case 1:
+                add_HL_16bit(E);
+                queue_push(INSTR_QUEUE, add_HL_16bit, D);
+                break;
+            case 2:
+                add_HL_16bit(L);
+                queue_push(INSTR_QUEUE, add_HL_16bit, H);
+                break;
+            case 3:
+                add_HL_16bit(SP0);
+                queue_push(INSTR_QUEUE, add_HL_16bit, SP1);
+                break;
+            default:
+                perror("Invalid opcode during load_immediate_add_16bit, add HL r16");
+                break;
+        }
+    }
     //LD r16,n16 - 3 cycles: decode -> ld_r8_imm -> ld_r8_imm
-    switch (bits_four_five) {
-        case 0:
-            queue_push(INSTR_QUEUE, func, C);
-            queue_push(INSTR_QUEUE, func, B);
-            return;
-        case 1:
-            queue_push(INSTR_QUEUE, func, E);
-            queue_push(INSTR_QUEUE, func, D);
-            return;
-        case 2:
-            queue_push(INSTR_QUEUE, func, L);
-            queue_push(INSTR_QUEUE, func, H);
-            return;
-        case 3:
-            queue_push(INSTR_QUEUE, func, SP0);
-            queue_push(INSTR_QUEUE, func, SP1);
-            return;
-        default:
-            perror("Invalid opcode during load_immediate_add_16bit");
-            return;
+    else {
+        switch (bits_four_five) {
+            case 0:
+                queue_push(INSTR_QUEUE, func, C);
+                queue_push(INSTR_QUEUE, func, B);
+                return;
+            case 1:
+                queue_push(INSTR_QUEUE, func, E);
+                queue_push(INSTR_QUEUE, func, D);
+                return;
+            case 2:
+                queue_push(INSTR_QUEUE, func, L);
+                queue_push(INSTR_QUEUE, func, H);
+                return;
+            case 3:
+                queue_push(INSTR_QUEUE, func, SP0);
+                queue_push(INSTR_QUEUE, func, SP1);
+                return;
+            default:
+                perror("Invalid opcode during load_immediate_add_16bit");
+                return;
+        }
     }
 }
-
 
 static void indirect_loading(uint8_t opcode) {
     uint8_t bit_three = GET_BIT_THREE(opcode);
@@ -287,29 +313,31 @@ static void alu(uint8_t opcode) {
     uint8_t third_octal_dig = GET_THIRD_OCTAL_DIGIT(opcode);
     uint8_t operand;
 
-    //add imm
+    //alu imm - 2 cycles
     if (first_octal_dig == 3) {
-        queue_push(INSTR_QUEUE, alu_ops[second_octal_dig], TRUE);
+        alu_ops[second_octal_dig](TRUE);
+        queue_push(INSTR_QUEUE, alu_ops[second_octal_dig], FALSE);
     }
     else {
         operand = REGISTERS_DT[third_octal_dig];
-        //ADD [HL] r8
+        //alu A [HL] - 2 cycles
         if (third_octal_dig == 6) {
             CPU->ADDRESS_BUS = read_16bit_reg(HL);
-            queue_push(INSTR_QUEUE, read_memory, UNUSED_VAL);
+            read_memory(UNUSED_VAL);
+            queue_push(INSTR_QUEUE, alu_ops[second_octal_dig], FALSE);
         }
-        //ADD r8, r8
+        //alu r8, r8 - 1 cycles
         else {
             CPU->DATA_BUS = CPU->REGS[operand];
-
+            alu_ops[second_octal_dig](FALSE);
         }
     }
-    queue_push(INSTR_QUEUE, alu_ops[second_octal_dig], FALSE);
 }
 
 static void mem_mapped_ops(uint8_t opcode) {
     uint8_t second_octal_dig = GET_SECOND_OCTAL_DIGIT(opcode);
     switch (second_octal_dig) {
+        //RET cc - 5 cycles taken/ 3 untaken
         default:
             queue_push(INSTR_QUEUE, ret_eval_cc, CC[second_octal_dig]);
             queue_push(INSTR_QUEUE, ret, 0);
@@ -321,6 +349,7 @@ static void mem_mapped_ops(uint8_t opcode) {
             queue_push(INSTR_QUEUE, ldh_imm8, UNUSED_VAL);
             queue_push(INSTR_QUEUE, write_memory, UNUSED_VAL);
             return;
+        //ADD sp e8 - 4 cycles
         case 5:
             queue_push(INSTR_QUEUE, add_sp_e8, 2);
             queue_push(INSTR_QUEUE, add_sp_e8, 3);
@@ -342,26 +371,29 @@ static void mem_mapped_ops(uint8_t opcode) {
 static void pop_various(uint8_t opcode) {
     uint8_t bit_three = GET_BIT_THREE(opcode);
     uint8_t bits_four_five = GET_BITS_FOUR_FIVE(opcode);
+    // POP [r16] - 3 cycles
     if (!bit_three) {
-        //TODO POP NEEDS TO BE THREE CYCLES
         pop_reads(2);
         queue_push(INSTR_QUEUE, pop_reads, 3);
         queue_push(INSTR_QUEUE, pop_load, REGISTER_PAIRS2_DT[bits_four_five]);
     }
     else {
         switch (bits_four_five) {
+            //ret 4 cycles
             case 0:
                 queue_push(INSTR_QUEUE, ret, 0);
                 queue_push(INSTR_QUEUE, ret, 1);
                 queue_push(INSTR_QUEUE, ret, 2);
                 return;
+            //reti 4 cycles
             case 1:
                 queue_push(INSTR_QUEUE, reti, 2);
                 queue_push(INSTR_QUEUE, reti, 3);
                 queue_push(INSTR_QUEUE, reti, 4);
                 return;
+            //jp hl - 1 cycle
             case 2:
-                queue_push(INSTR_QUEUE, jp, TRUE);
+                jp(TRUE);
                 return;
             //LD SP,HL - 2 cycles : decode -> ld_sp_hl
             case 3:
@@ -376,6 +408,7 @@ static void pop_various(uint8_t opcode) {
 static void conditional_jumps(uint8_t opcode) {
     uint8_t second_octal_dig = GET_SECOND_OCTAL_DIGIT(opcode);
     switch (second_octal_dig) {
+        //jp cc - 4 cycles taken/ 3 untaken
         default:
             queue_push(INSTR_QUEUE, ld_r8_imm8, Z);
             queue_push(INSTR_QUEUE, jp_cycle3, CC[second_octal_dig]);
@@ -410,6 +443,7 @@ static void conditional_jumps(uint8_t opcode) {
 static void assorted_ops(uint8_t opcode) {
     uint8_t second_octal_dig = GET_SECOND_OCTAL_DIGIT(opcode);
     switch (second_octal_dig) {
+        //jp n16 - 4 cycles
         case 0:
             queue_push(INSTR_QUEUE, ld_r8_imm8, Z);
             queue_push(INSTR_QUEUE, jp_cycle3, NONE);
@@ -432,6 +466,7 @@ static void conditional_calls(uint8_t opcode) {
     uint8_t second_octal_dig = GET_SECOND_OCTAL_DIGIT(opcode);
     //instructions whose opcode's second octal digit are 4-7 are usually implemented in the Z80 but not on the gbz80
     if (second_octal_dig < 4) {
+        //call 6 cycles taken/ 3 untakem
         queue_push(INSTR_QUEUE, ld_r8_imm8, Z);
         queue_push(INSTR_QUEUE, call_cycle3, CC[second_octal_dig]);
         queue_push(INSTR_QUEUE, dec_16bit, SP);
@@ -446,6 +481,7 @@ static void conditional_calls(uint8_t opcode) {
 static void push_call_nop(uint8_t opcode) {
     uint8_t bit_three = GET_BIT_THREE(opcode);
     uint8_t bits_four_five = GET_BITS_FOUR_FIVE(opcode);
+    //push 4 cycles
     if (!bit_three) {
         write_16bit_reg(WZ, read_16bit_reg(REGISTER_PAIRS2_DT[bits_four_five]));
         queue_push(INSTR_QUEUE, push, 2);
@@ -455,6 +491,7 @@ static void push_call_nop(uint8_t opcode) {
     else if (bits_four_five) {
         nop(opcode);
     }
+    //call 6 cycles
     else {
         queue_push(INSTR_QUEUE, ld_r8_imm8, Z);
         queue_push(INSTR_QUEUE, call_cycle3, NONE);
@@ -465,12 +502,18 @@ static void push_call_nop(uint8_t opcode) {
 }
 
 static void rst_instr(uint8_t opcode) {
+    //rst 4 cycles
     CPU->DATA_BUS = GET_SECOND_OCTAL_DIGIT(opcode) * 8;
     queue_push(INSTR_QUEUE, rst, 2);
     queue_push(INSTR_QUEUE, rst, 3);
     queue_push(INSTR_QUEUE, rst, 4);
 }
 
+
+/*
+ * INCORRECT TIMING HERE
+ * CB 46 - bit 0 [HL], measure 4 cycles, correct is 3 cycles
+ */
 static void cb_prefixed_ops(uint8_t opcode) {
     read_next_byte();
     opcode = CPU->DATA_BUS;
@@ -479,7 +522,7 @@ static void cb_prefixed_ops(uint8_t opcode) {
     uint8_t bit_num = second_octal_dig;
     uint8_t reg = GET_THIRD_OCTAL_DIGIT(opcode);
     bool write_mem = false;
-    if (reg == 6) {
+    if ((reg == 6) & (first_octal_dig != 1)) {
         CPU->ADDRESS_BUS = read_16bit_reg(HL);
         queue_push(INSTR_QUEUE, read_memory, UNUSED_VAL);
         write_mem = true;
@@ -494,7 +537,9 @@ static void cb_prefixed_ops(uint8_t opcode) {
             }
             break;
         case 1:
-            if (write_mem) {
+            if (reg == 6) {
+                CPU->ADDRESS_BUS = read_16bit_reg(HL);
+                read_memory(UNUSED_VAL);
                 queue_push(INSTR_QUEUE, bit, bit_num);
             }
             else {
