@@ -1,10 +1,10 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdio.h>
-#include "decode.h"
-#include "cpu.h"
-#include "gb.h"
-#include "queue.h"
+#include <decode.h>
+#include <cpu.h>
+#include <gb.h>
+#include <queue.h>
 
 #define PREFIX 0xCB
 #define GET_FIRST_OCTAL_DIGIT(byte) ((byte & 0xC0) >> 6)
@@ -128,7 +128,6 @@ static void relative_jumps(uint8_t opcode) {
 static void load_immediate_add_16bit(uint8_t opcode) {
     uint8_t bit_three = GET_BIT_THREE(opcode);
     uint8_t bits_four_five = GET_BITS_FOUR_FIVE(opcode);
-    execute_func func = bit_three ? &add_HL_16bit : &ld_r8_imm8;
     //ADD HL,r16 - 2 cycles: decode -> add first bit -> add_A_8bit second bit
     if (bit_three) {
         switch (bits_four_five) {
@@ -157,20 +156,20 @@ static void load_immediate_add_16bit(uint8_t opcode) {
     else {
         switch (bits_four_five) {
             case 0:
-                queue_push(INSTR_QUEUE, func, C);
-                queue_push(INSTR_QUEUE, func, B);
+                queue_push(INSTR_QUEUE, ld_r8_imm8, C);
+                queue_push(INSTR_QUEUE, ld_r8_imm8, B);
                 return;
             case 1:
-                queue_push(INSTR_QUEUE, func, E);
-                queue_push(INSTR_QUEUE, func, D);
+                queue_push(INSTR_QUEUE, ld_r8_imm8, E);
+                queue_push(INSTR_QUEUE, ld_r8_imm8, D);
                 return;
             case 2:
-                queue_push(INSTR_QUEUE, func, L);
-                queue_push(INSTR_QUEUE, func, H);
+                queue_push(INSTR_QUEUE, ld_r8_imm8, L);
+                queue_push(INSTR_QUEUE, ld_r8_imm8, H);
                 return;
             case 3:
-                queue_push(INSTR_QUEUE, func, SP0);
-                queue_push(INSTR_QUEUE, func, SP1);
+                queue_push(INSTR_QUEUE, ld_r8_imm8, SP0);
+                queue_push(INSTR_QUEUE, ld_r8_imm8, SP1);
                 return;
             default:
                 perror("Invalid opcode during load_immediate_add_16bit");

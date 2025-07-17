@@ -1,8 +1,6 @@
 #ifndef GB_EMU_QUEUE_H
 #define GB_EMU_QUEUE_H
 
-#include <stdint.h>
-
 typedef void (*execute_func)(uint8_t);
 
 typedef struct func_and_parm_wrapper {
@@ -11,8 +9,8 @@ typedef struct func_and_parm_wrapper {
 } func_and_param_wrapper;
 
 typedef struct func_queue {
-    uint8_t front;
-    uint8_t back;
+    int8_t front;
+    int8_t back;
     func_and_param_wrapper* functions;
 } func_queue;
 

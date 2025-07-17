@@ -1,10 +1,10 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include "gb.h"
-#include "cpu.h"
-#include "queue.h"
-
+#include <gb.h>
+#include <lcd.h>
+#include <cpu.h>
+#include <queue.h>
 #define ROM_SIZE 0x8000
 #define TAC_ENABlE(tac) (tac & 0x04)
 #define TAC_CLOCK_SELECT(tac) (tac & 0x03)
@@ -26,23 +26,26 @@ void free_resources() {
     free(INSTR_QUEUE->functions);
     free(INSTR_QUEUE);
     free(MEMORY);
+    lcd_free();
     exit(0);
 }
+
 /*
  * Main function loop
  * Initializes memory and CPU then continually executes instructions
  */
-int main(int argc, char *argv[]) {
+int main(int argc, char* argv[]) {
     memory_init(argv[1]);
     cpu_init();
-    timer_internal_counter = 0;
-    div_internal_counter = 0;
-    cycles_to_increment_timer = 256;
-    while (true) {
+    lcd_init();
+    while (LCD->is_running) {
         execute_next_cycle();
         increment_timers();
+        process_events();
+        lcd_update();
         check_sp();
     }
+    free_resources();
 }
 
 /*
@@ -173,6 +176,9 @@ static void io_ports_init() {
     MEMORY[OBP1] = 0x00;
     MEMORY[WY] = 0x00;
     MEMORY[WX] = 0x00;
+    timer_internal_counter = 0;
+    div_internal_counter = 0;
+    cycles_to_increment_timer = 256;
 }
 
 /*

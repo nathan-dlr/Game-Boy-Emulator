@@ -2,10 +2,10 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include "gb.h"
-#include "cpu.h"
-#include "decode.h"
-#include "queue.h"
+#include <gb.h>
+#include <cpu.h>
+#include <decode.h>
+#include <queue.h>
 #define ZERO_FLAG(f) (f & 0x80)
 #define SUBTRACTION_FLAG(f) (f & 0x40)
 #define HALF_CARRY_FLAG(f) (f & 0x20)
@@ -54,10 +54,8 @@ void cpu_init() {
  */
 void execute_next_cycle() {
     if (is_empty(INSTR_QUEUE)) {
-        if (!check_interrupts() & CPU->STATE == RUNNING) {
+        if (!check_interrupts() && CPU->STATE == RUNNING) {
             read_next_byte();
-            //look for ldh IE 04
-            //
             decode();
         }
     }
@@ -66,9 +64,6 @@ void execute_next_cycle() {
         next_func->func(next_func->parameter);
     }
     CYCLE_COUNT++;
-    if (CYCLE_COUNT > 0x10000000) {
-        free_resources();
-    }
 }
 
 /*
