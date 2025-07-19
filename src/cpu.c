@@ -30,6 +30,7 @@
 #define JOYPAD_VEC 0x60
 
 static bool check_interrupts();
+static void OAM_DMA();
 
 void cpu_init() {
     CPU = malloc(sizeof(CPU_STRUCT));
@@ -62,6 +63,9 @@ void execute_next_cycle() {
     else {
         const func_and_param_wrapper* next_func = queue_pop(INSTR_QUEUE);
         next_func->func(next_func->parameter);
+    }
+    if (CPU->STATE == OAM_DMA_TRANSFER) {
+        OAM_DMA();
     }
     CYCLE_COUNT++;
 }

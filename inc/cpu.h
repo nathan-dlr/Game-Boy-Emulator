@@ -95,7 +95,8 @@ enum CC {
 
 enum CPU_STATES {
     RUNNING,
-    HALTED
+    HALTED,
+    OAM_DMA_TRANSFER
 };
 
 typedef struct CPU_STRUCT {
@@ -103,6 +104,7 @@ typedef struct CPU_STRUCT {
     uint8_t IME;
     uint8_t DATA_BUS;
     uint16_t ADDRESS_BUS;
+    uint8_t DMA_CYCLE;
     enum CPU_STATES STATE;
 } CPU_STRUCT;
 

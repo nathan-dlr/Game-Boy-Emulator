@@ -40,14 +40,8 @@ void process_events() {
 }
 
 void lcd_update() {
-    if (LCD->renderer) {
-        SDL_RenderClear(LCD->renderer);
-        SDL_RenderPresent(LCD->renderer);
-    }
-    else {
-        perror("No renderer");
-        exit(1);
-    }
+    SDL_RenderClear(LCD->renderer);
+    SDL_RenderPresent(LCD->renderer);
 }
 
 void lcd_free() {
