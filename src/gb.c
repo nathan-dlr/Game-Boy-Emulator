@@ -5,6 +5,7 @@
 #include <lcd.h>
 #include <cpu.h>
 #include <queue.h>
+#include <ppu.h>
 #define ROM_SIZE 0x8000
 #define TAC_ENABlE(tac) (tac & 0x04)
 #define TAC_CLOCK_SELECT(tac) (tac & 0x03)
@@ -26,6 +27,7 @@ void free_resources() {
     free(INSTR_QUEUE->functions);
     free(INSTR_QUEUE);
     free(MEMORY);
+    free(PPU);
     lcd_free();
     exit(0);
 }
@@ -53,7 +55,7 @@ int main(int argc, char* argv[]) {
  */
 void read_memory(uint8_t UNUSED) {
     (void)UNUSED;
-    //for debugging with gameboy doctor
+    //for debugging with game boy doctor
     if (CPU->ADDRESS_BUS == LY) {
         CPU->DATA_BUS = 0x90;
         return;
@@ -67,7 +69,13 @@ void read_memory(uint8_t UNUSED) {
  */
 void write_memory(uint8_t UNUSED) {
     (void)UNUSED;
+    //TODO IS THERE A 2 CYCLE DELAY FOR OAM DMA?
+    if (CPU->ADDRESS_BUS == DMA) {
+        CPU->STATE = OAM_DMA_TRANSFER;
+    }
+
     MEMORY[CPU->ADDRESS_BUS] = CPU->DATA_BUS;
+
     if (CPU->ADDRESS_BUS == TAC) {
         switch (TAC_CLOCK_SELECT(MEMORY[TAC])) {
             case 0:
@@ -91,7 +99,18 @@ void write_memory(uint8_t UNUSED) {
     }
 }
 
-void increment_timers() {
+void OAM_DMA() {
+    uint16_t source_address = (MEMORY[DMA] << 8) | CPU->DMA_CYCLE;
+    MEMORY[0xFE00 | CPU->DMA_CYCLE] = MEMORY[source_address];
+    if (CPU->DMA_CYCLE == 0xDF) {
+        CPU->STATE = RUNNING;
+    }
+    else {
+        CPU->DMA_CYCLE++;
+    }
+}
+
+static void increment_timers() {
     div_internal_counter++;
     if (div_internal_counter >= DIV_INCREMENT) {
         div_internal_counter -= DIV_INCREMENT;
@@ -116,7 +135,7 @@ void increment_timers() {
  */
 static void memory_init(const char* file_name) {
     MEMORY = malloc(0xFFFF);
-    const FILE* gb_game =  fopen(file_name, "rb");
+    FILE* gb_game =  fopen(file_name, "rb");
     if (gb_game != NULL) {
         fread(MEMORY, sizeof(uint8_t), ROM_SIZE, gb_game);
         if (ferror(gb_game) != 0) {
@@ -188,7 +207,7 @@ static void io_ports_init() {
  */
 static void check_sp() {
     if (MEMORY[SC] == 0x81) {
-        char c = MEMORY[SB];
+        char c = (char) MEMORY[SB];
 
         printf("%c", c);
 

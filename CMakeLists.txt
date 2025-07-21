@@ -20,6 +20,7 @@ add_executable(gb_emu
         src/decode.c
         src/queue.c
         src/lcd.c
+        src/ppu.c
 )
 
 target_include_directories(gb_emu PUBLIC inc)

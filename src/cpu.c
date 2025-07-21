@@ -30,7 +30,6 @@
 #define JOYPAD_VEC 0x60
 
 static bool check_interrupts();
-static void OAM_DMA();
 
 void cpu_init() {
     CPU = malloc(sizeof(CPU_STRUCT));
@@ -44,6 +43,7 @@ void cpu_init() {
     write_16bit_reg(PC, 0x0100);
     CPU->STATE = RUNNING;
     CPU->IME = false;
+    CPU->DMA_CYCLE = 0;
     CYCLE_COUNT = 0;
 }
 
