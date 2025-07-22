@@ -110,10 +110,10 @@ static bool check_interrupts() {
         CPU->DATA_BUS = JOYPAD_VEC;
         MEMORY[IF] = CLEAR_BIT(JOYPAD_BIT, interrupt_flag);
     }
-    queue_push(INSTR_QUEUE, nop, UNUSED_VAL);
-    queue_push(INSTR_QUEUE, rst, 2);
-    queue_push(INSTR_QUEUE, rst, 3);
-    queue_push(INSTR_QUEUE, rst, 4);
+    instr_queue_push(nop, UNUSED_VAL);
+    instr_queue_push(rst, 2);
+    instr_queue_push(rst, 3);
+    instr_queue_push(rst, 4);
     return true;
 }
 
