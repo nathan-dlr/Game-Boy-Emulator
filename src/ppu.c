@@ -44,10 +44,40 @@ void oam_search_store() {
         PPU->CURRENT_OBJ->y_flip = oam_attributes & 0x40;
         PPU->CURRENT_OBJ->x_flip = oam_attributes & 0x20;
         PPU->CURRENT_OBJ->palette = oam_attributes & 0x10;
+        //TODO Needs to be a min heap beased off x coord
         object_queue_push(PPU->CURRENT_OBJ);
     }
 }
 
-void read_tile_num() {
-    
+void fetch_tile() {
+    uint16_t tile_map_address;
+    if (MEMORY[WX] >= PPU->PIXEL_X_VALUE) {
+        //get window tile
+    }
+    else {
+        tile_map_address = MEMORY[LCDC] & 0x08 ? 0x9800 : 0x9C00;
+    }
+}
+
+void pop_pixel() {
+    uint8_t obj_x_coord; //peek object's x
+    /*
+     * additionally make sure our object heap is caught up to our scanline
+     * if a object in the list is not shown the screen, its x position wont ever be equal to the screen's x position so pop it from heap if its xpos is less than ppu
+     */
+
+    if (obj_x_coord == PPU->PIXEL_X_VALUE) {
+        //replace all pixels with that of object, how many cycles does this take?
+        //there's a penalty for objects, so maybe add a penalty attribute to the ppu that can be subtracted for each dot that passes
+    }
+    else if (MEMORY[WX] == PPU->PIXEL_X_VALUE) {
+        //wipe fifo, reset fetched. this only happens when we first hit window coordinate
+    }
+    //pop_pixel
+    if (MEMORY[SCX] > PPU->PIXEL_X_VALUE) {
+        //throw away pixel until our x pixel is past the scroll
+    }
+    else {
+        //add to screen
+    }
 }

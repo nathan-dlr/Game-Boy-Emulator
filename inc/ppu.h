@@ -23,6 +23,8 @@ typedef struct PPU_STRUCT {
     enum PPU_STATE STATE;
     bool VALID_OAM;
     struct OAM_STRUCT* CURRENT_OBJ;
+    uint8_t PIXEL_X_VALUE;
+    uint8_t CURRENT_TILE;
 } PPU_STRUCT;
 
 
