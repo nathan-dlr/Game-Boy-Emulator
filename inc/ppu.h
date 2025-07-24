@@ -23,8 +23,13 @@ typedef struct PPU_STRUCT {
     enum PPU_STATE STATE;
     bool VALID_OAM;
     struct OAM_STRUCT* CURRENT_OBJ;
-    uint8_t PIXEL_X_VALUE;
-    uint8_t CURRENT_TILE;
+    uint8_t FETCHER_Y;
+    uint8_t FETCHER_X;  //incremented per 8 pixels fetched
+    uint8_t RENDER_X;   //incremented per pixel pushed
+    uint8_t TILE_NUMBER;
+    uint8_t TILE_ADDRESS;
+    uint8_t DATA_LOW;
+    uint8_t DATA_HIGH;
 } PPU_STRUCT;
 
 

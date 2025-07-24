@@ -6,6 +6,7 @@
 
 #define OBP0 0
 #define OBP 1
+#define BITS_PER_TILE 16
 
 void ppu_init() {
     PPU = malloc(sizeof(PPU_STRUCT));
@@ -44,37 +45,66 @@ void oam_search_store() {
         PPU->CURRENT_OBJ->y_flip = oam_attributes & 0x40;
         PPU->CURRENT_OBJ->x_flip = oam_attributes & 0x20;
         PPU->CURRENT_OBJ->palette = oam_attributes & 0x10;
-        //TODO Needs to be a min heap beased off x coord
+        //TODO Needs to be a min heap based off x coord
         object_queue_push(PPU->CURRENT_OBJ);
     }
 }
 
+
 void fetch_tile() {
+    uint8_t tile_x;
+    uint16_t base_address;
     uint16_t tile_map_address;
-    if (MEMORY[WX] >= PPU->PIXEL_X_VALUE) {
-        //get window tile
+    if ((MEMORY[WX] >= PPU->FETCHER_X) && (MEMORY[LCDC] & 0x20)) {
+        base_address = MEMORY[LCDC] & 0x40 ? 0x9C00 : 0x9800;
+        tile_x = PPU->FETCHER_X;
+        PPU->FETCHER_Y = MEMORY[LY] - MEMORY[WY];
+        tile_map_address = base_address + tile_x + ((PPU->FETCHER_Y / 8) * 32);
+        PPU->TILE_NUMBER = MEMORY[tile_map_address];
     }
     else {
-        tile_map_address = MEMORY[LCDC] & 0x08 ? 0x9800 : 0x9C00;
+        base_address = MEMORY[LCDC] & 0x08 ? 0x9C00 : 0x9800;
+        tile_x = ((MEMORY[SCX] / 8) + PPU->FETCHER_X) & 0x1F;
+        PPU->FETCHER_Y = (MEMORY[LY] + MEMORY[SCY]) & 0xFF;
+        tile_map_address = base_address + tile_x + ((PPU->FETCHER_Y / 8) * 32);
+        //TODO IF VRAM IS BLOCKED THAN TILE NUMBER WILL BE READ AS 0xFF
+        PPU->TILE_NUMBER = MEMORY[tile_map_address];
+
     }
 }
 
+void get_tile_data_low() {
+    uint16_t base_address = MEMORY[LCDC] & 0x10 ? 0x8000 : 0x8800;
+    PPU->TILE_ADDRESS = base_address + (PPU->TILE_NUMBER * BITS_PER_TILE); //get tile
+    PPU->TILE_ADDRESS += 2 * (PPU->FETCHER_Y % 8);                         //get line of pixels within the tile
+    PPU->DATA_LOW = MEMORY[PPU->TILE_ADDRESS];
+}
+
+void get_tile_data_high() {
+    PPU->DATA_HIGH = MEMORY[PPU->TILE_ADDRESS+1];
+}
+
 void pop_pixel() {
+    //TODO ONLY PUSH IF AT LEAST 8 BITS in FIFO
+    if (MEMORY[WX] == MEMORY[LY]) {
+        //WINDOW CONDITION IS TRUE
+    }
     uint8_t obj_x_coord; //peek object's x
     /*
      * additionally make sure our object heap is caught up to our scanline
      * if a object in the list is not shown the screen, its x position wont ever be equal to the screen's x position so pop it from heap if its xpos is less than ppu
      */
 
-    if (obj_x_coord == PPU->PIXEL_X_VALUE) {
+    if (obj_x_coord == PPU->RENDER_X) {
         //replace all pixels with that of object, how many cycles does this take?
         //there's a penalty for objects, so maybe add a penalty attribute to the ppu that can be subtracted for each dot that passes
     }
-    else if (MEMORY[WX] == PPU->PIXEL_X_VALUE) {
+    else if ((MEMORY[WX] == PPU->RENDER_X) && (MEMORY[LCDC] & 0x20)) {
+        PPU->FETCHER_X = PPU->RENDER_X;
         //wipe fifo, reset fetched. this only happens when we first hit window coordinate
     }
     //pop_pixel
-    if (MEMORY[SCX] > PPU->PIXEL_X_VALUE) {
+    if (MEMORY[SCX] > PPU->RENDER_X) {
         //throw away pixel until our x pixel is past the scroll
     }
     else {
