@@ -8,6 +8,14 @@ enum PPU_STATE {
     V_BLANK
 };
 
+enum PIXEL_TRANSFER_STATE {
+    GET_TILE,
+    GET_DATA_LOW,
+    GET_DATA_HIGH,
+    SLEEP,
+    PUSH
+};
+
 typedef struct OAM_STRUCT {
     uint8_t y_pos;
     uint8_t x_pos;
@@ -21,6 +29,7 @@ typedef struct OAM_STRUCT {
 typedef struct PPU_STRUCT {
     uint8_t RENDER_CYCLE;
     enum PPU_STATE STATE;
+    enum PIXEL_TRANSFER_STATE PIXEL_TRANSFER_STATE;
     bool VALID_OAM;
     struct OAM_STRUCT* CURRENT_OBJ;
     uint8_t FETCHER_Y;

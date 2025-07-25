@@ -2,7 +2,7 @@
 #include <queue.h>
 #include <ppu.h>
 #define QUEUE_CAPACITY 10
-
+#define PIXEL_FIFO_CAPACITY 16
 
 void queue_init(func_queue* queue) {
     queue->functions = malloc(QUEUE_CAPACITY * sizeof(func_and_param_wrapper));

@@ -20,6 +20,10 @@ typedef struct object_queue {
     struct OAM_STRUCT* objects;
 } object_queue;
 
+typedef struct pixel_queue {
+    uint8_t*
+};
+
 func_queue* INSTR_QUEUE;
 object_queue* OBJ_QUEUE;
 

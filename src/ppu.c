@@ -69,8 +69,8 @@ void fetch_tile() {
         tile_map_address = base_address + tile_x + ((PPU->FETCHER_Y / 8) * 32);
         //TODO IF VRAM IS BLOCKED THAN TILE NUMBER WILL BE READ AS 0xFF
         PPU->TILE_NUMBER = MEMORY[tile_map_address];
-
     }
+    PPU->PIXEL_TRANSFER_STATE = GET_DATA_LOW;
 }
 
 void get_tile_data_low() {
@@ -78,10 +78,30 @@ void get_tile_data_low() {
     PPU->TILE_ADDRESS = base_address + (PPU->TILE_NUMBER * BITS_PER_TILE); //get tile
     PPU->TILE_ADDRESS += 2 * (PPU->FETCHER_Y % 8);                         //get line of pixels within the tile
     PPU->DATA_LOW = MEMORY[PPU->TILE_ADDRESS];
+    PPU->PIXEL_TRANSFER_STATE = GET_DATA_HIGH;
 }
 
 void get_tile_data_high() {
     PPU->DATA_HIGH = MEMORY[PPU->TILE_ADDRESS+1];
+    PPU->PIXEL_TRANSFER_STATE = SLEEP;
+}
+
+/*
+ * Make the array of pixels once in sleep, so that if pixels arent ready to be pushed,
+ * theres no need to keep checking if the array has been made already
+ */
+void pixel_transfer_sleep() {
+    PPU->PIXEL_TRANSFER_STATE = PUSH;
+    uint8_t data_low = PPU->DATA_LOW;
+    uint8_t data_high = PPU->DATA_HIGH;
+    uint8_t pixel;
+    for (int i = 8; i > 0; i / 2) {
+        pixel = ((data_high & (0x01 << i)) >> (i - 1)) | ((data_low & (0x01 << i)) >> i);
+    }
+}
+
+void pixel_push() {
+    //if FIFO.size <= 8 then push
 }
 
 void pop_pixel() {
