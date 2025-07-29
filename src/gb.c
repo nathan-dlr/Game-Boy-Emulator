@@ -38,6 +38,7 @@ void free_resources() {
  */
 int main(int argc, char* argv[]) {
     memory_init(argv[1]);
+    queue_init();
     cpu_init();
     lcd_init();
     while (LCD->is_running) {

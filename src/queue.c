@@ -11,9 +11,10 @@ void queue_init() {
     INSTR_QUEUE->front = -1;
     INSTR_QUEUE->back = -1;
 
-    PIXEL_QUEUE->pixels = (uint8_t*)calloc(PIXEL_FIFO_CAPACITY, sizeof(uint8_t));
-    PIXEL_QUEUE->front = -1;
-    PIXEL_QUEUE->back = -1;
+    PIXEL_FIFO->pixels = (uint8_t*)calloc(PIXEL_FIFO_CAPACITY, sizeof(uint8_t));
+    PIXEL_FIFO->front = -1;
+    PIXEL_FIFO->back = -1;
+    PIXEL_FIFO->size = 0;
 }
 
 bool is_empty(const func_queue* queue) {
@@ -29,32 +30,42 @@ void instr_queue_push(execute_func func, uint8_t parameter) {
     INSTR_QUEUE->functions[INSTR_QUEUE->back].parameter = parameter;
 }
 
-void pixel_queue_push(uint8_t pixel) {
-    if (PIXEL_QUEUE->front == -1) {
-        PIXEL_QUEUE->front = 0;
+void pixel_fifo_push(uint8_t pixel) {
+    if (PIXEL_FIFO->front == -1) {
+        PIXEL_FIFO->front = 0;
     }
-    PIXEL_QUEUE->back = (PIXEL_QUEUE->back + 1) % PIXEL_FIFO_CAPACITY;
-    PIXEL_QUEUE->pixels[PIXEL_QUEUE->back] = pixel;
+    PIXEL_FIFO->back = (PIXEL_FIFO->back + 1) % PIXEL_FIFO_CAPACITY;
+    PIXEL_FIFO->pixels[PIXEL_FIFO->back] = pixel;
+    PIXEL_FIFO->size++;
 }
 
-func_and_param_wrapper* instr_queue_pop(func_queue* queue) {
-    func_and_param_wrapper* data = &queue->functions[queue->front];
-    if (queue->front == queue->back) {
-        queue->front = queue->back = -1;
+func_and_param_wrapper* instr_queue_pop() {
+    func_and_param_wrapper* data = &INSTR_QUEUE->functions[INSTR_QUEUE->front];
+    if (INSTR_QUEUE->front == INSTR_QUEUE->back) {
+        INSTR_QUEUE->front = INSTR_QUEUE->back = -1;
     }
     else {
-        queue->front = (queue->front + 1) % QUEUE_CAPACITY;
+        INSTR_QUEUE->front = (INSTR_QUEUE->front + 1) % QUEUE_CAPACITY;
     }
     return data;
 }
 
-uint8_t pixel_queue_pop() {
-    uint8_t pixel = PIXEL_QUEUE->pixels[PIXEL_QUEUE->back];
-    if (PIXEL_QUEUE->front == PIXEL_QUEUE->back) {
-        PIXEL_QUEUE->front = PIXEL_QUEUE->back = -1;
+uint8_t pixel_fifo_pop() {
+    uint8_t pixel = PIXEL_FIFO->pixels[PIXEL_FIFO->back];
+    if (PIXEL_FIFO->front == PIXEL_FIFO->back) {
+        PIXEL_FIFO->front = PIXEL_FIFO->back = -1;
     }
     else {
-        PIXEL_QUEUE->front = (PIXEL_QUEUE->front + 1) % PIXEL_FIFO_CAPACITY;
+        PIXEL_FIFO->front = (PIXEL_FIFO->front + 1) % PIXEL_FIFO_CAPACITY;
     }
+
+    PIXEL_FIFO->size--;
     return pixel;
+}
+
+uint8_t pixel_fifo_size() {
+    if (PIXEL_FIFO->front == -1) {
+        return 0;
+    }
+
 }

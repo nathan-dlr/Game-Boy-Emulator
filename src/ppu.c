@@ -97,14 +97,13 @@ void pixel_transfer_sleep() {
     uint8_t pixel;
     for (int i = 7; i >= 0; i--) {
         pixel = ((data_high & (0x01 << i)) >> (i - 1)) | ((data_low & (0x01 << i)) >> i);
-
-        //TODO add pixel to queue
     }
     PPU->PIXEL_TRANSFER_STATE = PUSH;
 }
 
 void pixel_push() {
     //if FIFO.size <= 8 then push
+    if (PIXEL_FIFO->)
 }
 
 void pop_pixel() {
