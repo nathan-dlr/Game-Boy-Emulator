@@ -61,7 +61,7 @@ void execute_next_cycle() {
         }
     }
     else {
-        const func_and_param_wrapper* next_func = queue_pop(INSTR_QUEUE);
+        const func_and_param_wrapper* next_func = instr_queue_pop(INSTR_QUEUE);
         next_func->func(next_func->parameter);
     }
     if (CPU->STATE == OAM_DMA_TRANSFER) {
@@ -928,9 +928,9 @@ void call_cycle3(uint8_t cc) {
     read_next_byte();
     CPU->REGS[W] = CPU->DATA_BUS;
     if (!evaluate_condition_codes(cc)) {
-        queue_pop(INSTR_QUEUE);
-        queue_pop(INSTR_QUEUE);
-        queue_pop(INSTR_QUEUE);
+        instr_queue_pop(INSTR_QUEUE);
+        instr_queue_pop(INSTR_QUEUE);
+        instr_queue_pop(INSTR_QUEUE);
     }
 }
 
@@ -963,7 +963,7 @@ void jp_cycle3(uint8_t cc) {
     read_next_byte();
     CPU->REGS[W] = CPU->DATA_BUS;
     if (!evaluate_condition_codes(cc)) {
-        queue_pop(INSTR_QUEUE);
+        instr_queue_pop(INSTR_QUEUE);
     }
 }
 
@@ -989,7 +989,7 @@ void jr_cycle2(uint8_t cc) {
     read_next_byte();
     CPU->REGS[Z] = CPU->DATA_BUS;
     if (!evaluate_condition_codes(cc)) {
-        queue_pop(INSTR_QUEUE);
+        instr_queue_pop(INSTR_QUEUE);
     }
     else {
         CPU->DATA_BUS = CPU->REGS[Z];
@@ -1016,9 +1016,9 @@ void jr(uint8_t UNUSED) {
  */
 void ret_eval_cc(uint8_t cc) {
     if (!evaluate_condition_codes(cc)) {
-        queue_pop(INSTR_QUEUE);
-        queue_pop(INSTR_QUEUE);
-        queue_pop(INSTR_QUEUE);
+        instr_queue_pop(INSTR_QUEUE);
+        instr_queue_pop(INSTR_QUEUE);
+        instr_queue_pop(INSTR_QUEUE);
     }
 }
 

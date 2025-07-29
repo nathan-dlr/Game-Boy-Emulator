@@ -69,7 +69,7 @@ void read_memory(uint8_t UNUSED) {
  */
 void write_memory(uint8_t UNUSED) {
     (void)UNUSED;
-    //TODO IS THERE A 2 CYCLE DELAY FOR OAM DMA?
+    //TODO 2 CYCLE DELAY FOR OAM DMA?
     if (CPU->ADDRESS_BUS == DMA) {
         CPU->STATE = OAM_DMA_TRANSFER;
     }

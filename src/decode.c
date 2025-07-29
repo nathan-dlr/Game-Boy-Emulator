@@ -399,7 +399,7 @@ static void pop_various(uint8_t opcode) {
                 instr_queue_push(ld_sp_hl, UNUSED_VAL);
                 return;
             default:
-                perror("Invalid opcode in decoding queue_pop");
+                perror("Invalid opcode in decoding instr_queue_pop");
         }
     }
 }
@@ -509,10 +509,6 @@ static void rst_instr(uint8_t opcode) {
 }
 
 
-/*
- * INCORRECT TIMING HERE
- * CB 46 - bit 0 [HL], measure 4 cycles, correct is 3 cycles
- */
 static void cb_prefixed_ops(uint8_t opcode) {
     read_next_byte();
     opcode = CPU->DATA_BUS;

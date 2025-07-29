@@ -14,22 +14,18 @@ typedef struct func_queue {
     func_and_param_wrapper* functions;
 } func_queue;
 
-typedef struct object_queue {
-    int8_t front;
-    int8_t back;
-    struct OAM_STRUCT* objects;
-} object_queue;
 
 typedef struct pixel_queue {
-    uint8_t*
-};
+    int8_t front;
+    int8_t back;
+    uint8_t* pixels;
+} pixel_queue;
 
 func_queue* INSTR_QUEUE;
-object_queue* OBJ_QUEUE;
+pixel_queue* PIXEL_QUEUE;
 
-void queue_init(func_queue* queue);
+void queue_init();
 bool is_empty(const func_queue* queue);
 void instr_queue_push(execute_func func, uint8_t parameter);
-void object_queue_push(struct OAM_STRUCT* current_object);
-func_and_param_wrapper* queue_pop(func_queue* queue);
+func_and_param_wrapper* instr_queue_pop(func_queue* queue);
 #endif //GB_EMU_QUEUE_H

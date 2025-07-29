@@ -20,6 +20,7 @@ typedef struct OAM_STRUCT {
     uint8_t y_pos;
     uint8_t x_pos;
     uint8_t tile_index;
+    uint16_t address;
     bool priority;
     bool y_flip;
     bool x_flip;

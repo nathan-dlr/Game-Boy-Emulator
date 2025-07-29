@@ -3,6 +3,7 @@
 #include <ppu.h>
 #include <gb.h>
 #include <queue.h>
+#include <min_heap.h>
 
 #define OBP0 0
 #define OBP 1
@@ -26,12 +27,10 @@ void oam_search_validate() {
         PPU->VALID_OAM = true;
         PPU->CURRENT_OBJ->y_pos = obj_y_pos;
         PPU->CURRENT_OBJ->x_pos = obj_x_pos;
+        PPU->CURRENT_OBJ->address = oam_index;
     }
     else {
         PPU->VALID_OAM = false;
-    }
-    if (PPU->RENDER_CYCLE == 80) {
-        PPU->STATE = PIXEL_TRANSFER;
     }
 }
 
@@ -45,8 +44,10 @@ void oam_search_store() {
         PPU->CURRENT_OBJ->y_flip = oam_attributes & 0x40;
         PPU->CURRENT_OBJ->x_flip = oam_attributes & 0x20;
         PPU->CURRENT_OBJ->palette = oam_attributes & 0x10;
-        //TODO Needs to be a min heap based off x coord
-        object_queue_push(PPU->CURRENT_OBJ);
+        heap_insert(PPU->CURRENT_OBJ);
+    }
+    if (PPU->RENDER_CYCLE == 80) {
+        PPU->STATE = PIXEL_TRANSFER;
     }
 }
 
@@ -87,17 +88,19 @@ void get_tile_data_high() {
 }
 
 /*
- * Make the array of pixels once in sleep, so that if pixels arent ready to be pushed,
- * theres no need to keep checking if the array has been made already
+ * Make the array of pixels once in sleep, so that if pixels aren't ready to be pushed,
+ * there's no need to keep checking if the array has been made already
  */
 void pixel_transfer_sleep() {
-    PPU->PIXEL_TRANSFER_STATE = PUSH;
     uint8_t data_low = PPU->DATA_LOW;
     uint8_t data_high = PPU->DATA_HIGH;
     uint8_t pixel;
-    for (int i = 8; i > 0; i / 2) {
+    for (int i = 7; i >= 0; i--) {
         pixel = ((data_high & (0x01 << i)) >> (i - 1)) | ((data_low & (0x01 << i)) >> i);
+
+        //TODO add pixel to queue
     }
+    PPU->PIXEL_TRANSFER_STATE = PUSH;
 }
 
 void pixel_push() {
