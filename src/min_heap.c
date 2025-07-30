@@ -34,14 +34,49 @@ static void copy_object(OAM_STRUCT* dest, OAM_STRUCT* src) {
     }
 }
 
-void peek_min(OAM_STRUCT* ret) {
-    if (OBJ_HEAP->size == 0) return;
-    copy_object(ret, OBJ_HEAP->objects[0]);
+uint8_t heap_peek_x_pos() {
+    if (OBJ_HEAP->size == 0) {
+        return -1;
+    }
+    else {
+        return OBJ_HEAP->objects[0]->x_pos;
+    }
 }
 
-void extract_min(OAM_STRUCT* ret) {
+uint8_t heap_peek_tile_num() {
+    if (OBJ_HEAP->size == 0) {
+        return -1;
+    }
+    else {
+        return OBJ_HEAP->objects[0]->tile_index;
+    }
+}
+
+bool heap_peek_x_flip() {
+    if (OBJ_HEAP->size == 0) {
+        return false;
+    }
+    else {
+        return OBJ_HEAP->objects[0]->x_flip;
+    }
+}
+
+bool heap_peek_priority() {
+    if (OBJ_HEAP->size == 0) {
+        return false;
+    }
+    else {
+        return OBJ_HEAP->objects[0]->priority;
+    }
+}
+
+
+enum PALETTE heap_peek_palette() {
+    return OBJ_HEAP->objects[0]->palette;
+};
+
+void heap_delete_min() {
     if (OBJ_HEAP->size == 0) return;
-    copy_object(ret, OBJ_HEAP->objects[0]);
     OBJ_HEAP->objects[0] = OBJ_HEAP->objects[OBJ_HEAP->size - 1];
     OBJ_HEAP->size--;
     heapify_down();

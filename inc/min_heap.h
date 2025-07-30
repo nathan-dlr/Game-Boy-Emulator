@@ -11,8 +11,13 @@ object_min_heap* OBJ_HEAP;
 
 void heap_init();
 void heap_insert(OAM_STRUCT* object);
-void peek_min(OAM_STRUCT* ret);
-void extract_min(OAM_STRUCT* ret);
+uint8_t heap_peek_x_pos();
+uint8_t heap_peek_tile_num();
+bool heap_peek_x_flip();
+enum PALETTE heap_peek_palette();
+bool heap_peek_priority();
+void heap_extract_min(OAM_STRUCT* ret);
+void heap_delete_min();
 void heapify_up(uint8_t index);
 void heapify_down();
 

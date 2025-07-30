@@ -5,15 +5,23 @@
 #include <queue.h>
 #include <min_heap.h>
 
-#define OBP0 0
-#define OBP 1
 #define BITS_PER_TILE 16
+#define CYCLES_PER_LINE 456
+#define PIXELS_PER_TILE 8
 
 void ppu_init() {
     PPU = malloc(sizeof(PPU_STRUCT));
     PPU->CURRENT_OBJ = malloc(sizeof(OAM_STRUCT));
+    PPU->PIXEL_DATA = calloc(PIXELS_PER_TILE, sizeof(PIXEL_DATA));
     PPU->STATE = OAM_SEARCH;
     PPU->RENDER_CYCLE = 0;
+    PPU->FETCH_TYPE = BACKGROUND;
+}
+
+void ppu_free() {
+    free(PPU->PIXEL_DATA);
+    free(PPU->CURRENT_OBJ);
+    free(PPU);
 }
 
 void oam_search_validate() {
@@ -48,6 +56,7 @@ void oam_search_store() {
     }
     if (PPU->RENDER_CYCLE == 80) {
         PPU->STATE = PIXEL_TRANSFER;
+        PPU->NUM_SCROLL_PIXELS = MEMORY[SCX] % 8;
     }
 }
 
@@ -56,26 +65,32 @@ void fetch_tile() {
     uint8_t tile_x;
     uint16_t base_address;
     uint16_t tile_map_address;
-    if ((MEMORY[WX] >= PPU->FETCHER_X) && (MEMORY[LCDC] & 0x20)) {
+    if (PPU->FETCH_TYPE == WINDOW) {
         base_address = MEMORY[LCDC] & 0x40 ? 0x9C00 : 0x9800;
         tile_x = PPU->FETCHER_X;
         PPU->FETCHER_Y = MEMORY[LY] - MEMORY[WY];
         tile_map_address = base_address + tile_x + ((PPU->FETCHER_Y / 8) * 32);
         PPU->TILE_NUMBER = MEMORY[tile_map_address];
+        PPU->PIXEL_DATA->source = WINDOW;
     }
-    else {
+    else if (PPU->FETCH_TYPE == BACKGROUND) {
         base_address = MEMORY[LCDC] & 0x08 ? 0x9C00 : 0x9800;
         tile_x = ((MEMORY[SCX] / 8) + PPU->FETCHER_X) & 0x1F;
         PPU->FETCHER_Y = (MEMORY[LY] + MEMORY[SCY]) & 0xFF;
         tile_map_address = base_address + tile_x + ((PPU->FETCHER_Y / 8) * 32);
         //TODO IF VRAM IS BLOCKED THAN TILE NUMBER WILL BE READ AS 0xFF
         PPU->TILE_NUMBER = MEMORY[tile_map_address];
+        PPU->PIXEL_DATA->source = BACKGROUND;
+    }
+    else {
+        PPU->TILE_NUMBER = heap_peek_tile_num();
+        PPU->PIXEL_DATA->source = OBJECT;
     }
     PPU->PIXEL_TRANSFER_STATE = GET_DATA_LOW;
 }
 
 void get_tile_data_low() {
-    uint16_t base_address = MEMORY[LCDC] & 0x10 ? 0x8000 : 0x8800;
+    uint16_t base_address = MEMORY[LCDC] & 0x10 || PPU->FETCH_TYPE == OBJECT ? 0x8000 : 0x8800;
     PPU->TILE_ADDRESS = base_address + (PPU->TILE_NUMBER * BITS_PER_TILE); //get tile
     PPU->TILE_ADDRESS += 2 * (PPU->FETCHER_Y % 8);                         //get line of pixels within the tile
     PPU->DATA_LOW = MEMORY[PPU->TILE_ADDRESS];
@@ -84,52 +99,102 @@ void get_tile_data_low() {
 
 void get_tile_data_high() {
     PPU->DATA_HIGH = MEMORY[PPU->TILE_ADDRESS+1];
-    PPU->PIXEL_TRANSFER_STATE = SLEEP;
+    PPU->PIXEL_TRANSFER_STATE = PPU->FETCH_TYPE != OBJECT ? SLEEP : PUSH;
 }
 
-/*
- * Make the array of pixels once in sleep, so that if pixels aren't ready to be pushed,
- * there's no need to keep checking if the array has been made already
- */
-void pixel_transfer_sleep() {
+void construct_pixel_data() {
     uint8_t data_low = PPU->DATA_LOW;
     uint8_t data_high = PPU->DATA_HIGH;
     uint8_t pixel;
-    for (int i = 7; i >= 0; i--) {
+    for (int8_t i = 7, j = 0; i >= 0; i--, j++) {
         pixel = ((data_high & (0x01 << i)) >> (i - 1)) | ((data_low & (0x01 << i)) >> i);
+        PPU->PIXEL_DATA->binary_data[j] = pixel;
     }
     PPU->PIXEL_TRANSFER_STATE = PUSH;
 }
 
 void pixel_push() {
-    //if FIFO.size <= 8 then push
-    if (PIXEL_FIFO->)
-}
-
-void pop_pixel() {
-    //TODO ONLY PUSH IF AT LEAST 8 BITS in FIFO
-    if (MEMORY[WX] == MEMORY[LY]) {
-        //WINDOW CONDITION IS TRUE
-    }
-    uint8_t obj_x_coord; //peek object's x
-    /*
-     * additionally make sure our object heap is caught up to our scanline
-     * if a object in the list is not shown the screen, its x position wont ever be equal to the screen's x position so pop it from heap if its xpos is less than ppu
-     */
-
-    if (obj_x_coord == PPU->RENDER_X) {
-        //replace all pixels with that of object, how many cycles does this take?
-        //there's a penalty for objects, so maybe add a penalty attribute to the ppu that can be subtracted for each dot that passes
-    }
-    else if ((MEMORY[WX] == PPU->RENDER_X) && (MEMORY[LCDC] & 0x20)) {
-        PPU->FETCHER_X = PPU->RENDER_X;
-        //wipe fifo, reset fetched. this only happens when we first hit window coordinate
-    }
-    //pop_pixel
-    if (MEMORY[SCX] > PPU->RENDER_X) {
-        //throw away pixel until our x pixel is past the scroll
+    if (PPU->FETCH_TYPE != OBJECT) {
+        if (pixel_fifo_size() <= 8) {
+            pixel_fifo_push(PPU->PIXEL_DATA);
+            PPU->STATE = H_BLANK;
+        }
     }
     else {
-        //add to screen
+        //TODO MAYBE ENABLE/DISABLE PIXEL POPPING
+        //TODO YFLIP
+        construct_pixel_data();
+        pixel_fifo_merge_object(PPU->PIXEL_DATA);
+        heap_delete_min();
+        uint8_t obj_x_coord = heap_peek_x_pos();
+        if (obj_x_coord == PPU->RENDER_X) {
+            PPU->FETCH_TYPE = OBJECT;
+            PPU->PIXEL_TRANSFER_STATE = GET_TILE;
+            return;
+        }
+        else {
+            //TODO POP TILE
+        }
+
+    }
+}
+
+void h_blank() {
+    if (PPU->RENDER_CYCLE != CYCLES_PER_LINE) {
+        PPU->RENDER_CYCLE++;
+        return;
+    }
+    else if (MEMORY[LY] > 143) {
+        PPU->STATE = OAM_SEARCH;
+    }
+    else {
+        MEMORY[LY]++;
+        PPU->STATE = V_BLANK;
+    }
+}
+
+void v_blank() {
+    if (PPU->RENDER_CYCLE != CYCLES_PER_LINE) {
+        PPU->RENDER_CYCLE++;
+    }
+    else if (MEMORY[LY] > 154) {
+        MEMORY[LY]++;
+        PPU->RENDER_CYCLE = 0;
+    }
+    else {
+        MEMORY[LY] = 0;
+        PPU->RENDER_CYCLE = 0;
+        PPU->STATE = OAM_SEARCH;
+    }
+}
+void pop_pixel() {
+    //Check for window
+    if ((MEMORY[WX] == PPU->RENDER_X) && (PPU->FETCH_TYPE == BACKGROUND) && (MEMORY[LCDC] & 0x20)) {
+        pixel_fifo_clear();
+        PPU->PIXEL_TRANSFER_STATE = GET_TILE;
+        PPU->FETCH_TYPE = WINDOW;
+        return;
+    }
+    //check for object
+    uint8_t obj_x_coord = heap_peek_x_pos();
+    if (obj_x_coord == PPU->RENDER_X) {
+        PPU->FETCH_TYPE = OBJECT;
+        PPU->PIXEL_TRANSFER_STATE = GET_TILE;
+        return;
+    }
+    //pop_pixel if enough data in fifo
+    if (pixel_fifo_size() >= 8) {
+        if (PPU->NUM_SCROLL_PIXELS) {
+            pixel_fifo_pop();
+            PPU->NUM_SCROLL_PIXELS--;
+        } else {
+            PIXEL_DATA pixel_data = pixel_fifo_pop();
+            //add to screen
+        }
+        PPU->RENDER_X++;
+        if (PPU->RENDER_X == 160) {
+            pixel_fifo_clear();
+            PPU->STATE = H_BLANK;
+        }
     }
 }

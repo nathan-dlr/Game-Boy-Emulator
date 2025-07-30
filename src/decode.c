@@ -336,7 +336,7 @@ static void alu(uint8_t opcode) {
 static void mem_mapped_ops(uint8_t opcode) {
     uint8_t second_octal_dig = GET_SECOND_OCTAL_DIGIT(opcode);
     switch (second_octal_dig) {
-        //RET cc - 5 cycles taken/ 3 untaken
+        //RET cc - 5 cycles taken/ 3 not taken
         default:
             instr_queue_push(ret_eval_cc, CC[second_octal_dig]);
             instr_queue_push(ret, 0);
@@ -465,7 +465,7 @@ static void conditional_calls(uint8_t opcode) {
     uint8_t second_octal_dig = GET_SECOND_OCTAL_DIGIT(opcode);
     //instructions whose opcode's second octal digit are 4-7 are usually implemented in the Z80 but not on the gbz80
     if (second_octal_dig < 4) {
-        //call 6 cycles taken/ 3 untakem
+        //call 6 cycles taken/ 3 not taken
         instr_queue_push(ld_r8_imm8, Z);
         instr_queue_push(call_cycle3, CC[second_octal_dig]);
         instr_queue_push(dec_16bit, SP);
