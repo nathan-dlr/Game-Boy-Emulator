@@ -6,17 +6,25 @@
 #define OBJ_HEAP_CAPACITY 10
 
 void heap_init() {
-    OBJ_HEAP = (object_min_heap*)malloc(sizeof(object_min_heap));
+    OBJ_HEAP = (object_min_heap*) malloc(sizeof(object_min_heap));
     OBJ_HEAP->size = 0;
     OBJ_HEAP->capacity = OBJ_HEAP_CAPACITY;
-    OBJ_HEAP->objects = (OAM_STRUCT**)calloc(OBJ_HEAP_CAPACITY, sizeof(OAM_STRUCT*));
+    OBJ_HEAP->objects = (OAM_STRUCT**) malloc(OBJ_HEAP_CAPACITY * sizeof(OAM_STRUCT*));
 
     for (int i = 0; i < OBJ_HEAP_CAPACITY; i++) {
-        OBJ_HEAP->objects[i] = (OAM_STRUCT*)calloc(1, sizeof(OAM_STRUCT));
+        OBJ_HEAP->objects[i] = (OAM_STRUCT*) calloc(1, sizeof(OAM_STRUCT));
     }
 }
 
-static void copy_object(OAM_STRUCT* dest, OAM_STRUCT* src) {
+void heap_free() {
+    for (int i = 0; i < OBJ_HEAP_CAPACITY; i++) {
+        free(OBJ_HEAP->objects[i]);
+    }
+    free(OBJ_HEAP->objects);
+    free(OBJ_HEAP);
+}
+
+static void copy_object(OAM_STRUCT* dest, const OAM_STRUCT* src) {
     dest->y_pos = src->y_pos;
     dest->x_pos = src->x_pos;
     dest->tile_index = src->tile_index;
@@ -26,7 +34,7 @@ static void copy_object(OAM_STRUCT* dest, OAM_STRUCT* src) {
     dest->palette = src->palette;
 }
 
- void heap_insert(OAM_STRUCT* object) {
+ void heap_insert(const OAM_STRUCT* object) {
     if (OBJ_HEAP->size < OBJ_HEAP->capacity) {
         copy_object(OBJ_HEAP->objects[OBJ_HEAP->size], object);
         heapify_up(OBJ_HEAP->size);
@@ -82,7 +90,7 @@ void heap_delete_min() {
     heapify_down();
 }
 
-static bool is_higher_priority(OAM_STRUCT* a, OAM_STRUCT* b) {
+static bool is_higher_priority(const OAM_STRUCT* a, const OAM_STRUCT* b) {
     if (a->x_pos < b->x_pos) return true;
     if (a->x_pos == b->x_pos && a->address < b->address) return true;
     return false;
@@ -137,4 +145,8 @@ void heapify_down() {
         right = current * 2 + 2;
         min = compare_nodes(current, left, right);
     }
+}
+
+void heap_clear() {
+    OBJ_HEAP->size = 0;
 }

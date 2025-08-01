@@ -1,11 +1,12 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <gb.h>
-#include <lcd.h>
 #include <cpu.h>
-#include <queue.h>
 #include <ppu.h>
+#include <min_heap.h>
+#include <lcd.h>
+#include <queue.h>
+#include <gb.h>
 #define ROM_SIZE 0x8000
 #define TAC_ENABlE(tac) (tac & 0x04)
 #define TAC_CLOCK_SELECT(tac) (tac & 0x03)
@@ -22,12 +23,12 @@ static uint16_t cycles_to_increment_timer;
 
 
 void free_resources() {
-    printf("Freeing resources");
+    printf("Freeing resources\n");
     free(CPU);
-    free(INSTR_QUEUE->functions);
-    free(INSTR_QUEUE);
     free(MEMORY);
-    free(PPU);
+    ppu_free();
+    queue_free();
+    heap_free();
     lcd_free();
     exit(0);
 }
@@ -39,14 +40,20 @@ void free_resources() {
 int main(int argc, char* argv[]) {
     memory_init(argv[1]);
     queue_init();
+    heap_init();
     cpu_init();
+    ppu_init();
     lcd_init();
+    uint8_t cycles;
     while (LCD->is_running) {
-        execute_next_cycle();
-        increment_timers();
-        process_events();
-        lcd_update();
-        check_sp();
+        execute_next_PPU_cycle();
+        cycles++;
+        if (cycles == 3) {
+            execute_next_CPU_cycle();
+            increment_timers();
+            check_sp();
+            cycles = 0;
+        }
     }
     free_resources();
 }
@@ -56,11 +63,16 @@ int main(int argc, char* argv[]) {
  */
 void read_memory(uint8_t UNUSED) {
     (void)UNUSED;
-    //for debugging with game boy doctor
-    if (CPU->ADDRESS_BUS == LY) {
-        CPU->DATA_BUS = 0x90;
+
+    if ((PPU->STATE == OAM_SEARCH) && (CPU->ADDRESS_BUS >= 0xFE00) && CPU->ADDRESS_BUS <= 0xFE9F) {
+        CPU->DATA_BUS = 0xFF;
         return;
     }
+    if ((PPU->STATE == PIXEL_TRANSFER) && (CPU->ADDRESS_BUS >= 0x8000) && (CPU->ADDRESS_BUS <= 0x9FFF)) {
+        CPU->DATA_BUS = 0xFF;
+        return;
+    }
+
     CPU->DATA_BUS = MEMORY[CPU->ADDRESS_BUS];
 }
 
@@ -73,6 +85,13 @@ void write_memory(uint8_t UNUSED) {
     //TODO 2 CYCLE DELAY FOR OAM DMA?
     if (CPU->ADDRESS_BUS == DMA) {
         CPU->STATE = OAM_DMA_TRANSFER;
+    }
+
+    if ((PPU->STATE == OAM_SEARCH) && (CPU->ADDRESS_BUS >= 0xFE00) && CPU->ADDRESS_BUS <= 0xFE9F) {
+        return;
+    }
+    if ((PPU->STATE == PIXEL_TRANSFER) && (CPU->ADDRESS_BUS >= 0x8000) && (CPU->ADDRESS_BUS <= 0x9FFF)) {
+        return;
     }
 
     MEMORY[CPU->ADDRESS_BUS] = CPU->DATA_BUS;
@@ -185,7 +204,7 @@ static void io_ports_init() {
     MEMORY[NR51] = 0xF3;
     MEMORY[NR52] = 0xF1;
     MEMORY[LCDC] = 0x91;
-    MEMORY[STAT] = 0x85;
+    MEMORY[STAT] = 0x81;
     MEMORY[SCY] = 0x00;
     MEMORY[SCX] = 0x00;
     MEMORY[LY] = 0x00;

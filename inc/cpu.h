@@ -54,7 +54,7 @@ typedef struct CPU_STRUCT {
 
 CPU_STRUCT* CPU;
 void cpu_init();
-void execute_next_cycle();
+void execute_next_CPU_cycle();
 
 void read_next_byte();
 uint16_t read_16bit_reg(uint8_t reg_pair);

@@ -18,19 +18,20 @@ typedef struct pixel_queue {
     int8_t front;
     int8_t back;
     uint8_t size;
-    PIXEL_DATA* pixel_data;
+    PIXEL_DATA** pixel_data;
 } pixel_queue;
 
 func_queue* INSTR_QUEUE;
 pixel_queue* PIXEL_FIFO;
 
 void queue_init();
+void queue_free();
 bool is_empty(const func_queue* queue);
-uint8_t pixel_fifo_clear();
+void pixel_fifo_clear();
 void instr_queue_push(execute_func func, uint8_t parameter);
-void pixel_fifo_push(PIXEL_DATA* pixel_data);
-void pixel_fifo_merge_object(PIXEL_DATA* pixel_data);
+void pixel_fifo_push(const PIXEL_DATA* pixel_data);
+void pixel_fifo_merge_object(const PIXEL_DATA* pixel_data);
 func_and_param_wrapper* instr_queue_pop();
-PIXEL_DATA pixel_fifo_pop();
+void pixel_fifo_pop(PIXEL_DATA* ret);
 uint8_t pixel_fifo_size();
 #endif //GB_EMU_QUEUE_H

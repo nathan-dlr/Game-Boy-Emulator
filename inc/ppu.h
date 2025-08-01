@@ -9,7 +9,7 @@ enum PPU_STATE {
 };
 
 enum PIXEL_TRANSFER_STATE {
-    GET_TILE,
+    FETCH_TILE,
     GET_DATA_LOW,
     GET_DATA_HIGH,
     SLEEP,
@@ -23,8 +23,8 @@ enum FETCH_SOURCE {
 };
 
 enum PALETTE {
-    OBP0,
-    OBP1
+    OBJ_P0,
+    OBJ_P1
 };
 
 typedef struct OAM_STRUCT {
@@ -39,7 +39,7 @@ typedef struct OAM_STRUCT {
 } OAM_STRUCT;
 
 typedef struct PIXEL_DATA {
-    uint8_t* binary_data;
+    uint8_t binary_data;
     enum FETCH_SOURCE source;
     bool palette;
 } PIXEL_DATA;
@@ -48,10 +48,11 @@ typedef struct PPU_STRUCT {
     enum PPU_STATE STATE;
     enum PIXEL_TRANSFER_STATE PIXEL_TRANSFER_STATE;
     //RENDER DATA
-    uint8_t RENDER_CYCLE;
+    uint16_t RENDER_LINE_CYCLE;
     uint8_t RENDER_X;   //incremented per pixel pushed
     enum FETCH_SOURCE FETCH_TYPE;
     uint8_t NUM_SCROLL_PIXELS;
+    uint8_t PENALTY;
     //FETCHER DATA
     uint8_t FETCHER_Y;
     uint8_t FETCHER_X;  //incremented per 8 pixels fetched
@@ -59,7 +60,7 @@ typedef struct PPU_STRUCT {
     uint8_t TILE_ADDRESS;
     uint8_t DATA_LOW;
     uint8_t DATA_HIGH;
-    PIXEL_DATA* PIXEL_DATA;
+    PIXEL_DATA* PIXEL_DATA; //8 pixels
     //OBJECT DATA
     struct OAM_STRUCT* CURRENT_OBJ;
     bool VALID_OAM;
@@ -70,7 +71,6 @@ PPU_STRUCT* PPU;
 
 void ppu_init();
 void ppu_free();
-void oam_search();
-
+void execute_next_PPU_cycle();
 
 #endif //GB_EMU_PPU_H

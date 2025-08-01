@@ -1,10 +1,11 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdio.h>
-#include <decode.h>
 #include <cpu.h>
 #include <gb.h>
+#include <ppu.h>
 #include <queue.h>
+#include <decode.h>
 
 #define PREFIX 0xCB
 #define GET_FIRST_OCTAL_DIGIT(byte) ((byte & 0xC0) >> 6)

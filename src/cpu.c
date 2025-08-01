@@ -3,9 +3,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <gb.h>
-#include <cpu.h>
 #include <decode.h>
+#include <ppu.h>
 #include <queue.h>
+#include <cpu.h>
+
 #define ZERO_FLAG(f) (f & 0x80)
 #define SUBTRACTION_FLAG(f) (f & 0x40)
 #define HALF_CARRY_FLAG(f) (f & 0x20)
@@ -32,8 +34,7 @@
 static bool check_interrupts();
 
 void cpu_init() {
-    CPU = malloc(sizeof(CPU_STRUCT));
-    INSTR_QUEUE = malloc(sizeof(func_queue));
+    CPU = (CPU_STRUCT*) malloc(sizeof(CPU_STRUCT));
     write_16bit_reg(AF, 0x01B0);
     write_16bit_reg(BC, 0x0013);
     write_16bit_reg(DE, 0x00D8);
@@ -52,7 +53,7 @@ void cpu_init() {
  * instruction, if not it executes the next instruction
  * in the queue
  */
-void execute_next_cycle() {
+void execute_next_CPU_cycle() {
     if (is_empty(INSTR_QUEUE)) {
         if (!check_interrupts() && CPU->STATE == RUNNING) {
             read_next_byte();
