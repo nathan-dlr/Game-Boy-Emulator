@@ -9,6 +9,7 @@
 #define BITS_PER_TILE 16
 #define CYCLES_PER_LINE 456
 #define PIXELS_PER_TILE 8
+#define OAM_BASE_ADDRESS 0xFE00
 
 void ppu_init() {
     PPU = malloc(sizeof(PPU_STRUCT));
@@ -27,17 +28,19 @@ void ppu_free() {
 }
 
 static void oam_search_validate() {
-    uint8_t oam_index = PPU->RENDER_LINE_CYCLE / 2;
-    uint8_t obj_y_pos = MEMORY[oam_index];
-    uint8_t obj_x_pos = MEMORY[oam_index + 1];
+    uint16_t oam_address = OAM_BASE_ADDRESS + (PPU->RENDER_LINE_CYCLE - 1) * 2;
+    uint8_t obj_y_pos = MEMORY[oam_address];
+    uint8_t obj_x_pos = MEMORY[oam_address + 1];
     uint8_t lcd_y_position = MEMORY[LY];
-    uint8_t obj_height = MEMORY[LCDC] & 0x02 ? 16 : 8;
+    uint8_t obj_height = MEMORY[LCDC] & 0x04 ? 16 : 8;
 
+    //an objects y position is equal to their vertical position on screen + 16
     if ((lcd_y_position + 16 >= obj_y_pos) && (lcd_y_position + 16 <= obj_y_pos + obj_height)) {
+        printf("%X\n", oam_address);
         PPU->VALID_OAM = true;
         PPU->CURRENT_OBJ->y_pos = obj_y_pos;
         PPU->CURRENT_OBJ->x_pos = obj_x_pos;
-        PPU->CURRENT_OBJ->address = oam_index;
+        PPU->CURRENT_OBJ->address = oam_address;
     }
     else {
         PPU->VALID_OAM = false;
@@ -46,9 +49,9 @@ static void oam_search_validate() {
 
 static void oam_search_store() {
     if (PPU->VALID_OAM) {
-        uint8_t oam_index = PPU->RENDER_LINE_CYCLE / 2;
-        uint8_t tile_index = MEMORY[oam_index];
-        uint8_t oam_attributes = MEMORY[oam_index + 1];
+        uint16_t oam_address = PPU->CURRENT_OBJ->address;
+        uint8_t tile_index = MEMORY[oam_address + 2];
+        uint8_t oam_attributes = MEMORY[oam_address + 3];
         PPU->CURRENT_OBJ->tile_index = tile_index;
         PPU->CURRENT_OBJ->priority = oam_attributes & 0x80;
         PPU->CURRENT_OBJ->y_flip = oam_attributes & 0x40;
@@ -186,13 +189,12 @@ static void pop_pixel() {
 }
 
 void h_blank() {
-    if (PPU->RENDER_LINE_CYCLE != CYCLES_PER_LINE) {
-        return;
+    if (PPU->RENDER_LINE_CYCLE == CYCLES_PER_LINE) {
+        MEMORY[LY]++;
+        PPU->RENDER_LINE_CYCLE = 0;
+        PPU->STATE = MEMORY[LY] < 143 ? OAM_SEARCH : V_BLANK;
+        MEMORY[STAT] = MEMORY[LY] < 143 ? 0x02 : 0x01;
     }
-    MEMORY[LY]++;
-    PPU->RENDER_LINE_CYCLE = 0;
-    PPU->STATE = MEMORY[LY] < 143 ? OAM_SEARCH : V_BLANK;
-    MEMORY[STAT] = MEMORY[LY] < 143 ? 0x02 : 0x01;
 }
 
 void v_blank() {
@@ -225,17 +227,18 @@ void execute_next_PPU_cycle() {
         free_resources();
         exit(1);
     }
-    pop_pixel();
     if (PPU->PENALTY) {
         PPU->PENALTY--;
         PPU->RENDER_LINE_CYCLE++;
         return;
     }
+
     switch (PPU->STATE) {
         case OAM_SEARCH:
             PPU->RENDER_LINE_CYCLE % 2 ? oam_search_validate() : oam_search_store();
             break;
         case PIXEL_TRANSFER:
+            pop_pixel();
             switch (PPU->PIXEL_TRANSFER_STATE) {
                 case FETCH_TILE:
                     fetch_tile();
