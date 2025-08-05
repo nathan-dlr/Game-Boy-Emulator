@@ -53,11 +53,12 @@ typedef struct PPU_STRUCT {
     enum FETCH_SOURCE FETCH_TYPE;
     uint8_t NUM_SCROLL_PIXELS;
     uint8_t PENALTY;
+    bool POP_ENABLE;
     //FETCHER DATA
     uint8_t FETCHER_Y;
     uint8_t FETCHER_X;  //incremented per 8 pixels fetched
     uint8_t TILE_NUMBER;
-    uint8_t TILE_ADDRESS;
+    uint16_t TILE_ADDRESS;
     uint8_t DATA_LOW;
     uint8_t DATA_HIGH;
     PIXEL_DATA* PIXEL_DATA; //8 pixels

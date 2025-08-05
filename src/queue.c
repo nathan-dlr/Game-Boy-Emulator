@@ -64,27 +64,30 @@ void pixel_fifo_push(const PIXEL_DATA* pixel_data) {
 void pixel_fifo_merge_object(const PIXEL_DATA* pixel_data) {
     bool transparent;
     bool sprite_in_queue;
+    uint8_t index;
     uint8_t palette = heap_peek_palette();
     uint8_t priority = heap_peek_priority();
     if (heap_peek_x_flip()) {
         for (int8_t i = 0, j = 7; j >=0; i++, j--) {
+            index = (PIXEL_FIFO->front + i) % PIXEL_FIFO_CAPACITY;
             transparent = pixel_data[j].binary_data == 0x00;
-            sprite_in_queue = PIXEL_FIFO->pixel_data[PIXEL_FIFO->front + i]->source == OBJECT;
+            sprite_in_queue = PIXEL_FIFO->pixel_data[index]->source == OBJECT;
             if (!(transparent || sprite_in_queue || priority)) {
-                PIXEL_FIFO->pixel_data[PIXEL_FIFO->front + i]->binary_data = pixel_data[j].binary_data;
-                PIXEL_FIFO->pixel_data[PIXEL_FIFO->front + i]->source = pixel_data[j].source;
-                PIXEL_FIFO->pixel_data[PIXEL_FIFO->front + i]->palette = palette;
+                PIXEL_FIFO->pixel_data[index]->binary_data = pixel_data[j].binary_data;
+                PIXEL_FIFO->pixel_data[index]->source = pixel_data[j].source;
+                PIXEL_FIFO->pixel_data[index]->palette = palette;
             }
         }
     }
     else {
         for (uint8_t i = 0; i < 8; i++) {
+            index = (PIXEL_FIFO->front + i) % PIXEL_FIFO_CAPACITY;
             transparent = pixel_data[i].binary_data == 0x00;
-            sprite_in_queue = PIXEL_FIFO->pixel_data[PIXEL_FIFO->front + i]->source == OBJECT;
+            sprite_in_queue = PIXEL_FIFO->pixel_data[index]->source == OBJECT;
             if (!(transparent || sprite_in_queue || priority)) {
-                PIXEL_FIFO->pixel_data[PIXEL_FIFO->front + i]->binary_data = pixel_data[i].binary_data;
-                PIXEL_FIFO->pixel_data[PIXEL_FIFO->front + i]->source = pixel_data[i].source;
-                PIXEL_FIFO->pixel_data[PIXEL_FIFO->front + i]->palette = palette;
+                PIXEL_FIFO->pixel_data[index]->binary_data = pixel_data[i].binary_data;
+                PIXEL_FIFO->pixel_data[index]->source = pixel_data[i].source;
+                PIXEL_FIFO->pixel_data[index]->palette = palette;
             }
         }
     }

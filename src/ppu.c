@@ -10,6 +10,9 @@
 #define CYCLES_PER_LINE 456
 #define PIXELS_PER_TILE 8
 #define OAM_BASE_ADDRESS 0xFE00
+#define WINDOW_HEIGHT 144
+
+
 
 void ppu_init() {
     PPU = malloc(sizeof(PPU_STRUCT));
@@ -19,6 +22,7 @@ void ppu_init() {
     PPU->RENDER_LINE_CYCLE = 1;
     PPU->FETCH_TYPE = BACKGROUND;
     PPU->PENALTY = 0;
+    PPU->POP_ENABLE = true;
 }
 
 void ppu_free() {
@@ -36,7 +40,6 @@ static void oam_search_validate() {
 
     //an objects y position is equal to their vertical position on screen + 16
     if ((lcd_y_position + 16 >= obj_y_pos) && (lcd_y_position + 16 <= obj_y_pos + obj_height)) {
-        printf("%X\n", oam_address);
         PPU->VALID_OAM = true;
         PPU->CURRENT_OBJ->y_pos = obj_y_pos;
         PPU->CURRENT_OBJ->x_pos = obj_x_pos;
@@ -96,9 +99,13 @@ static void fetch_tile() {
 }
 
 static void get_tile_data_low() {
-    uint16_t base_address = ((MEMORY[LCDC] & 0x10) || (PPU->FETCH_TYPE == OBJECT)) ? 0x8000 : 0x8800;
-    PPU->TILE_ADDRESS = base_address + (PPU->TILE_NUMBER * BITS_PER_TILE); //get tile
-    PPU->TILE_ADDRESS += 2 * (PPU->FETCHER_Y % 8);                         //get line of pixels within the tile
+    if ((MEMORY[LCDC] & 0x10) || (PPU->FETCH_TYPE == OBJECT)) {
+        PPU->TILE_ADDRESS = 0x8000 + (PPU->TILE_NUMBER * BITS_PER_TILE);
+    }
+    else {
+        PPU->TILE_ADDRESS = 0x9000 + ((int8_t)PPU->TILE_NUMBER * BITS_PER_TILE);
+    }
+    PPU->TILE_ADDRESS += 2 * (PPU->FETCHER_Y % 8);
     PPU->DATA_LOW = MEMORY[PPU->TILE_ADDRESS];
     PPU->PIXEL_TRANSFER_STATE = GET_DATA_HIGH;
 }
@@ -111,9 +118,13 @@ static void get_tile_data_high() {
 static void construct_pixel_data() {
     uint8_t data_low = PPU->DATA_LOW;
     uint8_t data_high = PPU->DATA_HIGH;
+    uint8_t bit_0;
+    uint8_t bit_1;
     uint8_t pixel;
     for (int8_t i = 7, j = 0; i >= 0; i--, j++) {
-        pixel = ((data_high & (0x01 << i)) >> (i - 1)) | ((data_low & (0x01 << i)) >> i);
+        bit_0 = (data_low >> i) & 1;
+        bit_1 = (data_high >> i) & 1;
+        pixel = (bit_1 << 1) | bit_0;
         PPU->PIXEL_DATA[j].binary_data = pixel;
     }
     PPU->PIXEL_TRANSFER_STATE = PUSH;
@@ -134,7 +145,7 @@ static void pixel_push() {
         PPU->PIXEL_TRANSFER_STATE = FETCH_TILE;
 
         uint8_t obj_x_coord = heap_peek_x_pos();
-        if (obj_x_coord == PPU->RENDER_X) {
+        if (obj_x_coord == PPU->RENDER_X + 8) {
             PPU->FETCH_TYPE = OBJECT;
             return;
         }
@@ -145,6 +156,7 @@ static void pixel_push() {
             PPU->FETCH_TYPE = BACKGROUND;
         }
 
+        PPU->POP_ENABLE = true;
         PIXEL_DATA pixel_data;
         pixel_fifo_pop(&pixel_data);
         lcd_update_pixel(&pixel_data);
@@ -153,8 +165,11 @@ static void pixel_push() {
 }
 
 static void pop_pixel() {
+    if (!PPU->POP_ENABLE) {
+        return;
+    }
     //Check for window
-    if ((MEMORY[WX] == PPU->RENDER_X) && (PPU->FETCH_TYPE == BACKGROUND) && (MEMORY[LCDC] & 0x20)) {
+    if ((PPU->RENDER_X == MEMORY[WX] - 7) && (PPU->FETCH_TYPE == BACKGROUND) && (MEMORY[LCDC] & 0x20)) {
         pixel_fifo_clear();
         PPU->PIXEL_TRANSFER_STATE = FETCH_TILE;
         PPU->FETCH_TYPE = WINDOW;
@@ -162,7 +177,8 @@ static void pop_pixel() {
     }
     //check for object
     uint8_t obj_x_coord = heap_peek_x_pos();
-    if (obj_x_coord == PPU->RENDER_X) {
+    if (obj_x_coord == PPU->RENDER_X + 8) {
+        PPU->POP_ENABLE = false;
         PPU->FETCH_TYPE = OBJECT;
         PPU->PIXEL_TRANSFER_STATE = FETCH_TILE;
         return;
@@ -173,7 +189,8 @@ static void pop_pixel() {
         if (PPU->NUM_SCROLL_PIXELS) {
             pixel_fifo_pop(&pixel_data);
             PPU->NUM_SCROLL_PIXELS--;
-        } else {
+        }
+        else {
             pixel_fifo_pop(&pixel_data);
             lcd_update_pixel(&pixel_data);
         }
@@ -184,7 +201,22 @@ static void pop_pixel() {
             pixel_fifo_clear();
             PPU->STATE = H_BLANK;
             MEMORY[STAT] = (MEMORY[STAT] & 0xFC);
+            if (MEMORY[STAT] & 0x08) {
+                MEMORY[IF] |= 0x02;
+            }
         }
+    }
+}
+
+static void check_lyc_interrupt() {
+    if (MEMORY[LYC] == MEMORY[LY]) {
+        MEMORY[STAT] = (MEMORY[STAT] & 0xFB) | 0x04;
+        if (MEMORY[STAT] & 0x40) {
+            MEMORY[IF] |= 0x02;
+        }
+    }
+    else {
+        MEMORY[STAT] &= 0xFB;
     }
 }
 
@@ -192,8 +224,23 @@ void h_blank() {
     if (PPU->RENDER_LINE_CYCLE == CYCLES_PER_LINE) {
         MEMORY[LY]++;
         PPU->RENDER_LINE_CYCLE = 0;
-        PPU->STATE = MEMORY[LY] < 143 ? OAM_SEARCH : V_BLANK;
-        MEMORY[STAT] = MEMORY[LY] < 143 ? 0x02 : 0x01;
+        check_lyc_interrupt();
+
+        if (MEMORY[LY] < WINDOW_HEIGHT) {
+            PPU->STATE = OAM_SEARCH;
+            MEMORY[STAT] = (MEMORY[STAT] & 0xFC) | 0x02;
+            if (MEMORY[STAT] & 0x20) {
+                MEMORY[IF] |= 0x02;
+            }
+        }
+        else {
+            PPU->STATE = V_BLANK;
+            MEMORY[STAT] = (MEMORY[STAT] & 0xFC) | 0x01;
+            if (MEMORY[STAT] & 0x10) {
+                MEMORY[IF] |= 0x02;
+            }
+            MEMORY[IF] |= 0x01;
+        }
     }
 }
 
@@ -201,15 +248,20 @@ void v_blank() {
     if (PPU->RENDER_LINE_CYCLE != CYCLES_PER_LINE) {
         return;
     }
-    else if (MEMORY[LY] > 154) {
+    else if (MEMORY[LY] < 153) {
         MEMORY[LY]++;
+        check_lyc_interrupt();
         PPU->RENDER_LINE_CYCLE = 0;
     }
     else {
         MEMORY[LY] = 0;
+        check_lyc_interrupt();
         PPU->RENDER_LINE_CYCLE = 0;
         PPU->STATE = OAM_SEARCH;
         MEMORY[STAT] = (MEMORY[STAT] & 0xFC) | 0x02;
+        if (MEMORY[STAT] & 0x20) {
+            MEMORY[IF] |= 0x02;
+        }
         heap_clear();
         process_events();
         lcd_update_screen();
@@ -217,7 +269,13 @@ void v_blank() {
 }
 
 void execute_next_PPU_cycle() {
+    if ((PPU->RENDER_LINE_CYCLE > 80) && (PPU->STATE == OAM_SEARCH)) {
+        perror("OAM search exceeded 80 t cycles");
+        free_resources();
+        exit(1);
+    }
     if ((PPU->RENDER_LINE_CYCLE > 369) && (PPU->STATE == PIXEL_TRANSFER)) {
+        printf("render x: %d\n", PPU->RENDER_X);
         perror("Pixel transfer exceeded max cycles");
         free_resources();
         exit(1);
@@ -228,6 +286,9 @@ void execute_next_PPU_cycle() {
         exit(1);
     }
     if (PPU->PENALTY) {
+        if (PPU->STATE == PIXEL_TRANSFER) {
+            pop_pixel();
+        }
         PPU->PENALTY--;
         PPU->RENDER_LINE_CYCLE++;
         return;

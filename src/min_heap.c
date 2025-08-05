@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <ppu.h>
 #include <min_heap.h>
+#include <stdio.h>
 
 #define OBJ_HEAP_CAPACITY 10
 
@@ -13,12 +14,15 @@ void heap_init() {
 
     for (int i = 0; i < OBJ_HEAP_CAPACITY; i++) {
         OBJ_HEAP->objects[i] = (OAM_STRUCT*) calloc(1, sizeof(OAM_STRUCT));
+
     }
 }
 
 void heap_free() {
     for (int i = 0; i < OBJ_HEAP_CAPACITY; i++) {
-        free(OBJ_HEAP->objects[i]);
+        if (OBJ_HEAP->objects[i]) {
+            free(OBJ_HEAP->objects[i]);
+        }
     }
     free(OBJ_HEAP->objects);
     free(OBJ_HEAP);
@@ -85,7 +89,7 @@ enum PALETTE heap_peek_palette() {
 
 void heap_delete_min() {
     if (OBJ_HEAP->size == 0) return;
-    OBJ_HEAP->objects[0] = OBJ_HEAP->objects[OBJ_HEAP->size - 1];
+    copy_object(OBJ_HEAP->objects[0], OBJ_HEAP->objects[OBJ_HEAP->size - 1]);
     OBJ_HEAP->size--;
     heapify_down();
 }

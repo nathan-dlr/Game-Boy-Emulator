@@ -75,6 +75,19 @@ void lcd_update_pixel(PIXEL_DATA* pixel_data) {
     }
     pixel_color = (palette >> (color_index * 2)) & 0x03;
     pixel_rgb = COLORS_RGB[pixel_color];
+//    if (pixel_color == 0) {
+//        printf("Color: White LY: %d X_POS: %d\n", MEMORY[LY], PPU->RENDER_X);
+//    }
+//    else if (pixel_color == 1) {
+//        printf("Color: light grey LY: %d X_POS: %d\n", MEMORY[LY], PPU->RENDER_X);
+//    }
+//    else if (pixel_color == 2) {
+//        printf("Color: dark grey LY: %d X_POS: %d\n", MEMORY[LY], PPU->RENDER_X);
+//    }
+//    else {
+//        printf("Color: black LY: %d X_POS: %d\n", MEMORY[LY], PPU->RENDER_X);
+//    }
+
 
 
     uint32_t* surface_pixels = (uint32_t*)LCD->surface->pixels;
