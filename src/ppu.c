@@ -1,18 +1,18 @@
 #include <stdint.h>
 #include <stdlib.h>
-#include <ppu.h>
+#include <common.h>
 #include <gb.h>
-#include <queue.h>
 #include <min_heap.h>
 #include <lcd.h>
+#include <queue.h>
+#include <ppu.h>
 
 #define BITS_PER_TILE 16
 #define CYCLES_PER_LINE 456
 #define PIXELS_PER_TILE 8
 #define OAM_BASE_ADDRESS 0xFE00
-#define WINDOW_HEIGHT 144
 
-
+static void pop_pixel();
 
 void ppu_init() {
     PPU = malloc(sizeof(PPU_STRUCT));
@@ -23,6 +23,7 @@ void ppu_init() {
     PPU->FETCH_TYPE = BACKGROUND;
     PPU->PENALTY = 0;
     PPU->POP_ENABLE = true;
+    PPU->FIRST_TILE_DONE = false;
 }
 
 void ppu_free() {
@@ -69,6 +70,22 @@ static void oam_search_store() {
     }
 }
 
+static void construct_pixel_data() {
+    uint8_t data_low = PPU->DATA_LOW;
+    uint8_t data_high = PPU->DATA_HIGH;
+    uint8_t bit_0;
+    uint8_t bit_1;
+    uint8_t pixel;
+    for (int8_t i = 7, j = 0; i >= 0; i--, j++) {
+        bit_0 = (data_low >> i) & 1;
+        bit_1 = (data_high >> i) & 1;
+        pixel = (bit_1 << 1) | bit_0;
+        PPU->PIXEL_DATA[j].binary_data = pixel;
+        PPU->PIXEL_DATA[j].source = PPU->FETCH_TYPE;
+    }
+    PPU->PIXEL_TRANSFER_STATE = PUSH;
+}
+
 
 static void fetch_tile() {
     uint8_t tile_x;
@@ -105,42 +122,40 @@ static void get_tile_data_low() {
     else {
         PPU->TILE_ADDRESS = 0x9000 + ((int8_t)PPU->TILE_NUMBER * BITS_PER_TILE);
     }
-    PPU->TILE_ADDRESS += 2 * (PPU->FETCHER_Y % 8);
+    PPU->TILE_ADDRESS += 2 * (((MEMORY[LY] + MEMORY[SCY]) & 0xFF) % 8);
     PPU->DATA_LOW = MEMORY[PPU->TILE_ADDRESS];
     PPU->PIXEL_TRANSFER_STATE = GET_DATA_HIGH;
 }
 
 static void get_tile_data_high() {
     PPU->DATA_HIGH = MEMORY[PPU->TILE_ADDRESS+1];
-    PPU->PIXEL_TRANSFER_STATE = PPU->FETCH_TYPE != OBJECT ? SLEEP : PUSH;
-}
-
-static void construct_pixel_data() {
-    uint8_t data_low = PPU->DATA_LOW;
-    uint8_t data_high = PPU->DATA_HIGH;
-    uint8_t bit_0;
-    uint8_t bit_1;
-    uint8_t pixel;
-    for (int8_t i = 7, j = 0; i >= 0; i--, j++) {
-        bit_0 = (data_low >> i) & 1;
-        bit_1 = (data_high >> i) & 1;
-        pixel = (bit_1 << 1) | bit_0;
-        PPU->PIXEL_DATA[j].binary_data = pixel;
+    if (PPU->FETCH_TYPE == BACKGROUND && PPU->RENDER_X == 0 && !PPU->FIRST_TILE_DONE) {
+        //TODO COME BACK TO THIS
+        PPU->FIRST_TILE_DONE = true;
+        PPU->PIXEL_TRANSFER_STATE = FETCH_TILE;
     }
-    PPU->PIXEL_TRANSFER_STATE = PUSH;
+    else {
+        PPU->PIXEL_TRANSFER_STATE = PUSH;
+    }
+    construct_pixel_data();
 }
 
 static void pixel_push() {
-    if ((PPU->FETCH_TYPE != OBJECT) && (pixel_fifo_size() <= 8)) {
-        pixel_fifo_push(PPU->PIXEL_DATA);
+    if ((PPU->FETCH_TYPE != OBJECT) && (pixel_fifo_is_empty(PPU->BACKGROUND_FIFO))) {
+        background_fifo_push(PPU->PIXEL_DATA);
         PPU->FETCHER_X++;
         PPU->PIXEL_TRANSFER_STATE = FETCH_TILE;
     }
     else if (PPU->FETCH_TYPE == OBJECT) {
-        //TODO MAYBE ENABLE/DISABLE PIXEL POPPING
-        //TODO YFLIP
-        construct_pixel_data();
-        pixel_fifo_merge_object(PPU->PIXEL_DATA);
+        if (heap_peek_y_flip()) {
+            perror("Need to flip y");
+        }
+        if (pixel_fifo_is_empty(PPU->SPRITE_FIFO)) {
+            sprite_fifo_push(PPU->PIXEL_DATA);
+        }
+        else {
+            perror("need to compare priority of objects before continuing");
+        }
         heap_delete_min();
         PPU->PIXEL_TRANSFER_STATE = FETCH_TILE;
 
@@ -149,7 +164,7 @@ static void pixel_push() {
             PPU->FETCH_TYPE = OBJECT;
             return;
         }
-        else if ((MEMORY[WX] >= PPU->FETCHER_X) && (MEMORY[LCDC] & 0x20)) {
+        else if ((MEMORY[WX] - 7 >= PPU->FETCHER_X) && (MEMORY[LCDC] & 0x20)) {
             PPU->FETCH_TYPE = WINDOW;
         }
         else {
@@ -157,20 +172,55 @@ static void pixel_push() {
         }
 
         PPU->POP_ENABLE = true;
-        PIXEL_DATA pixel_data;
-        pixel_fifo_pop(&pixel_data);
-        lcd_update_pixel(&pixel_data);
-        PPU->RENDER_X++;
+        pop_pixel();
     }
 }
 
 static void pop_pixel() {
+    PIXEL_DATA pixel_data;
+
+    //throw away scroll pixels
+    if (PPU->NUM_SCROLL_PIXELS) {
+        pixel_fifo_pop(PPU->BACKGROUND_FIFO, &pixel_data);
+        PPU->NUM_SCROLL_PIXELS--;
+        return;
+    //merge pixel from both fifos
+    } else if (!pixel_fifo_is_empty(PPU->SPRITE_FIFO)) {
+        PIXEL_DATA bg_pixel_data;
+        PIXEL_DATA obj_pixel_data;
+        pixel_fifo_pop(PPU->BACKGROUND_FIFO, &bg_pixel_data);
+        pixel_fifo_pop(PPU->SPRITE_FIFO, &obj_pixel_data);
+        bool transparent = obj_pixel_data.binary_data == 0x00;
+        bool priority = obj_pixel_data.priority && (bg_pixel_data.source != 0);
+        pixel_data = transparent && priority ? obj_pixel_data : bg_pixel_data;
+    }
+    //pop from background fifo
+    else {
+        pixel_fifo_pop(PPU->BACKGROUND_FIFO, &pixel_data);
+    }
+
+    lcd_update_pixel(&pixel_data);
+    PPU->RENDER_X++;
+    if (PPU->RENDER_X == 160) {
+        PPU->RENDER_X = 0;
+        PPU->FETCHER_X = 0;
+        pixel_fifo_clear(PPU->BACKGROUND_FIFO);
+        pixel_fifo_clear(PPU->SPRITE_FIFO);
+        PPU->STATE = H_BLANK;
+        MEMORY[STAT] = (MEMORY[STAT] & 0xFC);
+        if (MEMORY[STAT] & 0x08) {
+            MEMORY[IF] |= 0x02;
+        }
+    }
+}
+
+static void pixel_renderer() {
     if (!PPU->POP_ENABLE) {
         return;
     }
     //Check for window
     if ((PPU->RENDER_X == MEMORY[WX] - 7) && (PPU->FETCH_TYPE == BACKGROUND) && (MEMORY[LCDC] & 0x20)) {
-        pixel_fifo_clear();
+        pixel_fifo_clear(PPU->BACKGROUND_FIFO);
         PPU->PIXEL_TRANSFER_STATE = FETCH_TILE;
         PPU->FETCH_TYPE = WINDOW;
         return;
@@ -183,28 +233,9 @@ static void pop_pixel() {
         PPU->PIXEL_TRANSFER_STATE = FETCH_TILE;
         return;
     }
-    //pop_pixel if enough data in fifo
-    if (pixel_fifo_size() >= 8) {
-        PIXEL_DATA pixel_data;
-        if (PPU->NUM_SCROLL_PIXELS) {
-            pixel_fifo_pop(&pixel_data);
-            PPU->NUM_SCROLL_PIXELS--;
-        }
-        else {
-            pixel_fifo_pop(&pixel_data);
-            lcd_update_pixel(&pixel_data);
-        }
-        PPU->RENDER_X++;
-        if (PPU->RENDER_X == 160) {
-            PPU->RENDER_X = 0;
-            PPU->FETCHER_X = 0;
-            pixel_fifo_clear();
-            PPU->STATE = H_BLANK;
-            MEMORY[STAT] = (MEMORY[STAT] & 0xFC);
-            if (MEMORY[STAT] & 0x08) {
-                MEMORY[IF] |= 0x02;
-            }
-        }
+    //pixel_renderer if enough data in fifo
+    if (!pixel_fifo_is_empty(PPU->BACKGROUND_FIFO)) {
+        pop_pixel();
     }
 }
 
@@ -224,6 +255,7 @@ void h_blank() {
     if (PPU->RENDER_LINE_CYCLE == CYCLES_PER_LINE) {
         MEMORY[LY]++;
         PPU->RENDER_LINE_CYCLE = 0;
+        PPU->FIRST_TILE_DONE = false;
         check_lyc_interrupt();
 
         if (MEMORY[LY] < WINDOW_HEIGHT) {
@@ -257,6 +289,7 @@ void v_blank() {
         MEMORY[LY] = 0;
         check_lyc_interrupt();
         PPU->RENDER_LINE_CYCLE = 0;
+        PPU->FIRST_TILE_DONE = 0;
         PPU->STATE = OAM_SEARCH;
         MEMORY[STAT] = (MEMORY[STAT] & 0xFC) | 0x02;
         if (MEMORY[STAT] & 0x20) {
@@ -287,7 +320,7 @@ void execute_next_PPU_cycle() {
     }
     if (PPU->PENALTY) {
         if (PPU->STATE == PIXEL_TRANSFER) {
-            pop_pixel();
+            pixel_renderer();
         }
         PPU->PENALTY--;
         PPU->RENDER_LINE_CYCLE++;
@@ -299,7 +332,7 @@ void execute_next_PPU_cycle() {
             PPU->RENDER_LINE_CYCLE % 2 ? oam_search_validate() : oam_search_store();
             break;
         case PIXEL_TRANSFER:
-            pop_pixel();
+            pixel_renderer();
             switch (PPU->PIXEL_TRANSFER_STATE) {
                 case FETCH_TILE:
                     fetch_tile();
@@ -311,10 +344,6 @@ void execute_next_PPU_cycle() {
                     break;
                 case GET_DATA_HIGH:
                     get_tile_data_high();
-                    PPU->PENALTY++;
-                    break;
-                case SLEEP:
-                    construct_pixel_data();
                     PPU->PENALTY++;
                     break;
                 case PUSH:

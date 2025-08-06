@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <common.h>
 #include <cpu.h>
 #include <ppu.h>
 #include <min_heap.h>
@@ -26,8 +27,8 @@ void free_resources() {
     printf("Freeing resources\n");
     free(CPU);
     free(MEMORY);
-    ppu_free();
     queue_free();
+    ppu_free();
     heap_free();
     lcd_free();
     exit(0);
@@ -39,10 +40,10 @@ void free_resources() {
  */
 int main(int argc, char* argv[]) {
     memory_init(argv[1]);
-    queue_init();
     heap_init();
     cpu_init();
     ppu_init();
+    queue_init();
     lcd_init();
     uint8_t cycles;
     while (LCD->is_running) {

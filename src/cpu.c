@@ -4,8 +4,9 @@
 #include <stdlib.h>
 #include <gb.h>
 #include <decode.h>
-#include <ppu.h>
+#include <common.h>
 #include <queue.h>
+#include <ppu.h>
 #include <cpu.h>
 
 #define ZERO_FLAG(f) (f & 0x80)

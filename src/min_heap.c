@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <stdlib.h>
+#include <common.h>
 #include <ppu.h>
 #include <min_heap.h>
 #include <stdio.h>
@@ -14,15 +15,12 @@ void heap_init() {
 
     for (int i = 0; i < OBJ_HEAP_CAPACITY; i++) {
         OBJ_HEAP->objects[i] = (OAM_STRUCT*) calloc(1, sizeof(OAM_STRUCT));
-
     }
 }
 
 void heap_free() {
     for (int i = 0; i < OBJ_HEAP_CAPACITY; i++) {
-        if (OBJ_HEAP->objects[i]) {
-            free(OBJ_HEAP->objects[i]);
-        }
+        free(OBJ_HEAP->objects[i]);
     }
     free(OBJ_HEAP->objects);
     free(OBJ_HEAP);
@@ -55,6 +53,7 @@ uint8_t heap_peek_x_pos() {
     }
 }
 
+
 uint8_t heap_peek_tile_num() {
     if (OBJ_HEAP->size == 0) {
         return -1;
@@ -70,6 +69,15 @@ bool heap_peek_x_flip() {
     }
     else {
         return OBJ_HEAP->objects[0]->x_flip;
+    }
+}
+
+bool heap_peek_y_flip() {
+    if (OBJ_HEAP->size == 0) {
+        return -1;
+    }
+    else {
+        return OBJ_HEAP->objects[0]->y_flip;
     }
 }
 

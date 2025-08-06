@@ -15,6 +15,7 @@ void heap_insert(const OAM_STRUCT* object);
 uint8_t heap_peek_x_pos();
 uint8_t heap_peek_tile_num();
 bool heap_peek_x_flip();
+bool heap_peek_y_flip();
 enum PALETTE heap_peek_palette();
 bool heap_peek_priority();
 void heap_delete_min();

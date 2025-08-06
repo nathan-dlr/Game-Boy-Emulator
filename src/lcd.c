@@ -1,11 +1,9 @@
 #include <stdlib.h>
 #include <stdbool.h>
+#include <common.h>
 #include <gb.h>
 #include <ppu.h>
 #include <lcd.h>
-
-#define WINDOW_WIDTH 160
-#define WINDOW_HEIGHT 144
 
 static const uint32_t COLORS_RGB[4] = {
         0xFFFFFFFF, // White
@@ -14,7 +12,6 @@ static const uint32_t COLORS_RGB[4] = {
         0x000000FF  // Black
 };
 
-//TODO FIX INIT
 void lcd_init() {
     LCD = (GameBoy_Display*) malloc(sizeof(GameBoy_Display));
 
@@ -75,20 +72,6 @@ void lcd_update_pixel(PIXEL_DATA* pixel_data) {
     }
     pixel_color = (palette >> (color_index * 2)) & 0x03;
     pixel_rgb = COLORS_RGB[pixel_color];
-//    if (pixel_color == 0) {
-//        printf("Color: White LY: %d X_POS: %d\n", MEMORY[LY], PPU->RENDER_X);
-//    }
-//    else if (pixel_color == 1) {
-//        printf("Color: light grey LY: %d X_POS: %d\n", MEMORY[LY], PPU->RENDER_X);
-//    }
-//    else if (pixel_color == 2) {
-//        printf("Color: dark grey LY: %d X_POS: %d\n", MEMORY[LY], PPU->RENDER_X);
-//    }
-//    else {
-//        printf("Color: black LY: %d X_POS: %d\n", MEMORY[LY], PPU->RENDER_X);
-//    }
-
-
 
     uint32_t* surface_pixels = (uint32_t*)LCD->surface->pixels;
     uint32_t y_offset = MEMORY[LY] * (LCD->surface->pitch / sizeof(uint32_t));
