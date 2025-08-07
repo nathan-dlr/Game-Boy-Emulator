@@ -224,12 +224,16 @@ static void pixel_renderer() {
         return;
     }
     //check for object
-    uint8_t obj_x_coord = heap_peek()->x_pos;
-    if (obj_x_coord == PPU->RENDER_X + 8) {
-        PPU->POP_ENABLE = false;
-        PPU->FETCH_TYPE = OBJECT;
-        PPU->PIXEL_TRANSFER_STATE = FETCH_TILE;
-        return;
+    //TODO MAKE LESS UGLY
+    OAM_STRUCT* obj = heap_peek();
+    if (obj) {
+        uint8_t obj_x_coord = heap_peek()->x_pos;
+        if (obj_x_coord == PPU->RENDER_X + 8) {
+            PPU->POP_ENABLE = false;
+            PPU->FETCH_TYPE = OBJECT;
+            PPU->PIXEL_TRANSFER_STATE = FETCH_TILE;
+            return;
+        }
     }
     //pixel_renderer if enough data in fifo
     if (!pixel_fifo_is_empty(PPU->BACKGROUND_FIFO)) {
