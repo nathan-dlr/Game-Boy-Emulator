@@ -26,6 +26,6 @@ void background_fifo_push(const PIXEL_DATA* pixel_data);
 void sprite_fifo_push(const PIXEL_DATA* pixel_data);
 func_and_param_wrapper* instr_queue_pop();
 void pixel_fifo_pop(PIXEL_FIFO* PIXEL_FIFO, PIXEL_DATA* ret);
-uint8_t pixel_fifo_size(PIXEL_FIFO* PIXEL_FIFO);
-bool pixel_fifo_is_empty(PIXEL_FIFO* PIXEL_FIFO);
+uint8_t pixel_fifo_size(const PIXEL_FIFO* PIXEL_FIFO);
+bool pixel_fifo_is_empty(const PIXEL_FIFO* PIXEL_FIFO);
 #endif //GB_EMU_QUEUE_H

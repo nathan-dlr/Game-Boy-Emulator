@@ -5,6 +5,7 @@
 #include <ppu.h>
 #include <lcd.h>
 
+
 static const uint32_t COLORS_RGB[4] = {
         0xFFFFFFFF, // White
         0xAAAAAAFF, // Light Gray
@@ -64,14 +65,19 @@ void lcd_update_pixel(PIXEL_DATA* pixel_data) {
     uint8_t color_index = pixel_data->binary_data;
     enum FETCH_SOURCE source = pixel_data->source;
 
-    if (source == BACKGROUND || source == WINDOW) {
+    if (((source == BACKGROUND || source == WINDOW)) && (MEMORY[LCDC] & 0x01)) {
         palette = MEMORY[BGP];
+        pixel_color = (palette >> (color_index * 2)) & 0x03;
+        pixel_rgb = COLORS_RGB[pixel_color];
+    }
+    else if ((source == OBJECT)) {
+        palette = pixel_data->palette == OBJ_P0 ? MEMORY[OBP0] : MEMORY[OBP1];
+        pixel_color = (palette >> (color_index * 2)) & 0x03;
+        pixel_rgb = COLORS_RGB[pixel_color];
     }
     else {
-        palette = pixel_data->palette == OBJ_P0 ? MEMORY[OBP0] : MEMORY[OBP1];
+        pixel_rgb = COLORS_RGB[0];
     }
-    pixel_color = (palette >> (color_index * 2)) & 0x03;
-    pixel_rgb = COLORS_RGB[pixel_color];
 
     uint32_t* surface_pixels = (uint32_t*)LCD->surface->pixels;
     uint32_t y_offset = MEMORY[LY] * (LCD->surface->pitch / sizeof(uint32_t));

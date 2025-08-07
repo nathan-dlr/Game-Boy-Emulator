@@ -97,7 +97,7 @@ static bool check_interrupts() {
     }
     else if (lcd) {
         CPU->DATA_BUS = STAT_VEC;
-        MEMORY[IF] = CLEAR_BIT(STAT_VEC, interrupt_flag);
+        MEMORY[IF] = CLEAR_BIT(LCD_BIT, interrupt_flag);
     }
     else if (timer) {
         CPU->DATA_BUS = TIMER_VEC;

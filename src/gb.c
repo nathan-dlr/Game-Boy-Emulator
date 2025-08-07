@@ -49,7 +49,7 @@ int main(int argc, char* argv[]) {
     while (LCD->is_running) {
         execute_next_PPU_cycle();
         cycles++;
-        if (cycles == 3) {
+        if (cycles == 4) {
             execute_next_CPU_cycle();
             increment_timers();
             check_sp();
@@ -65,14 +65,14 @@ int main(int argc, char* argv[]) {
 void read_memory(uint8_t UNUSED) {
     (void)UNUSED;
 
-    if ((PPU->STATE == OAM_SEARCH) && (CPU->ADDRESS_BUS >= 0xFE00) && CPU->ADDRESS_BUS <= 0xFE9F) {
-        CPU->DATA_BUS = 0xFF;
-        return;
-    }
-    if ((PPU->STATE == PIXEL_TRANSFER) && (CPU->ADDRESS_BUS >= 0x8000) && (CPU->ADDRESS_BUS <= 0x9FFF)) {
-        CPU->DATA_BUS = 0xFF;
-        return;
-    }
+//    if ((PPU->STATE == OAM_SEARCH) && (CPU->ADDRESS_BUS >= 0xFE00) && CPU->ADDRESS_BUS <= 0xFE9F) {
+//        CPU->DATA_BUS = 0xFF;
+//        return;
+//    }
+//    if ((PPU->STATE == PIXEL_TRANSFER) && (CPU->ADDRESS_BUS >= 0x8000) && (CPU->ADDRESS_BUS <= 0x9FFF)) {
+//        CPU->DATA_BUS = 0xFF;
+//        return;
+//    }
 
     CPU->DATA_BUS = MEMORY[CPU->ADDRESS_BUS];
 }
@@ -88,11 +88,15 @@ void write_memory(uint8_t UNUSED) {
         CPU->STATE = OAM_DMA_TRANSFER;
     }
 
-    if ((PPU->STATE == OAM_SEARCH) && (CPU->ADDRESS_BUS >= 0xFE00) && CPU->ADDRESS_BUS <= 0xFE9F) {
-        return;
-    }
-    if ((PPU->STATE == PIXEL_TRANSFER) && (CPU->ADDRESS_BUS >= 0x8000) && (CPU->ADDRESS_BUS <= 0x9FFF)) {
-        return;
+//    if ((PPU->STATE == OAM_SEARCH) && (CPU->ADDRESS_BUS >= 0xFE00) && CPU->ADDRESS_BUS <= 0xFE9F) {
+//        return;
+//    }
+//    if ((PPU->STATE == PIXEL_TRANSFER) && (CPU->ADDRESS_BUS >= 0x8000) && (CPU->ADDRESS_BUS <= 0x9FFF)) {
+//        return;
+//    }
+
+    if (CPU->ADDRESS_BUS == STAT) {
+        MEMORY[STAT] = (MEMORY[STAT] & 0x03) | CPU->DATA_BUS;
     }
 
     MEMORY[CPU->ADDRESS_BUS] = CPU->DATA_BUS;
@@ -208,7 +212,7 @@ static void io_ports_init() {
     MEMORY[STAT] = 0x81;
     MEMORY[SCY] = 0x00;
     MEMORY[SCX] = 0x00;
-    MEMORY[LY] = 0x00;
+    MEMORY[LY] = 0x91;
     MEMORY[LYC] = 0x00;
     MEMORY[DMA] = 0xFF;
     MEMORY[BGP] = 0xFC;

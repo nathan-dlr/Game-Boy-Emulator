@@ -34,6 +34,7 @@ static void copy_object(OAM_STRUCT* dest, const OAM_STRUCT* src) {
     dest->y_flip = src->y_flip;
     dest->x_flip = src->x_flip;
     dest->palette = src->palette;
+    dest->address = src->address;
 }
 
  void heap_insert(const OAM_STRUCT* object) {
@@ -44,56 +45,14 @@ static void copy_object(OAM_STRUCT* dest, const OAM_STRUCT* src) {
     }
 }
 
-uint8_t heap_peek_x_pos() {
+OAM_STRUCT* heap_peek() {
     if (OBJ_HEAP->size == 0) {
-        return -1;
+        return NULL;
     }
     else {
-        return OBJ_HEAP->objects[0]->x_pos;
+        return OBJ_HEAP->objects;
     }
 }
-
-
-uint8_t heap_peek_tile_num() {
-    if (OBJ_HEAP->size == 0) {
-        return -1;
-    }
-    else {
-        return OBJ_HEAP->objects[0]->tile_index;
-    }
-}
-
-bool heap_peek_x_flip() {
-    if (OBJ_HEAP->size == 0) {
-        return false;
-    }
-    else {
-        return OBJ_HEAP->objects[0]->x_flip;
-    }
-}
-
-bool heap_peek_y_flip() {
-    if (OBJ_HEAP->size == 0) {
-        return -1;
-    }
-    else {
-        return OBJ_HEAP->objects[0]->y_flip;
-    }
-}
-
-bool heap_peek_priority() {
-    if (OBJ_HEAP->size == 0) {
-        return false;
-    }
-    else {
-        return OBJ_HEAP->objects[0]->priority;
-    }
-}
-
-
-enum PALETTE heap_peek_palette() {
-    return OBJ_HEAP->objects[0]->palette;
-};
 
 void heap_delete_min() {
     if (OBJ_HEAP->size == 0) return;
@@ -102,41 +61,51 @@ void heap_delete_min() {
     heapify_down();
 }
 
-static bool is_higher_priority(const OAM_STRUCT* a, const OAM_STRUCT* b) {
-    if (a->x_pos < b->x_pos) return true;
-    if (a->x_pos == b->x_pos && a->address < b->address) return true;
-    return false;
-}
-
 void heapify_up(uint8_t index) {
-    if (index == 0) return;
-    uint8_t parent = (index - 1) / 2;
-    OAM_STRUCT* temp = NULL;
-    while (index > 0 && is_higher_priority(OBJ_HEAP->objects[index], OBJ_HEAP->objects[parent])) {
-        temp = OBJ_HEAP->objects[parent];
+    if (index == 0) {
+        return;
+    }
+
+    while (index > 0) {
+        uint8_t parent = (index - 1) / 2;
+
+        OAM_STRUCT* child_obj = OBJ_HEAP->objects[index];
+        OAM_STRUCT* parent_obj = OBJ_HEAP->objects[parent];
+
+        if (child_obj->x_pos > parent_obj->x_pos) {
+            break;
+        }
+        if (child_obj->x_pos == parent_obj->x_pos && child_obj->address >= parent_obj->address) {
+            break;
+        }
+
+        OAM_STRUCT* temp = OBJ_HEAP->objects[parent];
         OBJ_HEAP->objects[parent] = OBJ_HEAP->objects[index];
         OBJ_HEAP->objects[index] = temp;
 
         index = parent;
-        parent = (index - 1) / 2;
     }
 }
 
 static int8_t compare_nodes(int8_t current, int8_t left, int8_t right) {
-    uint8_t min = current;
-    if (left >= OBJ_HEAP->size) {
-        left = -1;
-    }
-    if (right >= OBJ_HEAP->size) {
-        right = -1;
+    int8_t min = current;
+
+    if (left < OBJ_HEAP->size) {
+        OAM_STRUCT* left_obj = OBJ_HEAP->objects[left];
+        OAM_STRUCT* current_obj = OBJ_HEAP->objects[min];
+        if (left_obj->x_pos < current_obj->x_pos || (left_obj->x_pos == current_obj->x_pos && left_obj->address < current_obj->address)) {
+            min = left;
+        }
     }
 
-    if ((left != -1) && (is_higher_priority(OBJ_HEAP->objects[left], OBJ_HEAP->objects[min]))) {
-        min = left;
+    if (right < OBJ_HEAP->size) {
+        OAM_STRUCT* right_obj = OBJ_HEAP->objects[right];
+        OAM_STRUCT* current_obj = OBJ_HEAP->objects[min];
+        if (right_obj->x_pos < current_obj->x_pos || (right_obj->x_pos == current_obj->x_pos && right_obj->address < current_obj->address)) {
+            min = right;
+        }
     }
-    if ((right != -1) && (is_higher_priority(OBJ_HEAP->objects[right], OBJ_HEAP->objects[min]))) {
-        min = right;
-    }
+
     return min;
 }
 

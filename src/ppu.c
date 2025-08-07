@@ -12,6 +12,7 @@
 #define PIXELS_PER_TILE 8
 #define OAM_BASE_ADDRESS 0xFE00
 
+
 static void pop_pixel();
 
 void ppu_init() {
@@ -21,6 +22,8 @@ void ppu_init() {
     PPU->STATE = V_BLANK;
     PPU->RENDER_LINE_CYCLE = 1;
     PPU->FETCH_TYPE = BACKGROUND;
+    PPU->FETCHER_X = 0;
+    PPU->RENDER_X = 0;
     PPU->PENALTY = 0;
     PPU->POP_ENABLE = true;
     PPU->FIRST_TILE_DONE = false;
@@ -39,8 +42,9 @@ static void oam_search_validate() {
     uint8_t lcd_y_position = MEMORY[LY];
     uint8_t obj_height = MEMORY[LCDC] & 0x04 ? 16 : 8;
 
+
     //an objects y position is equal to their vertical position on screen + 16
-    if ((lcd_y_position + 16 >= obj_y_pos) && (lcd_y_position + 16 <= obj_y_pos + obj_height)) {
+    if ((lcd_y_position >= obj_y_pos - 16) && (lcd_y_position < obj_y_pos - 16 + obj_height)) {
         PPU->VALID_OAM = true;
         PPU->CURRENT_OBJ->y_pos = obj_y_pos;
         PPU->CURRENT_OBJ->x_pos = obj_x_pos;
@@ -54,9 +58,8 @@ static void oam_search_validate() {
 static void oam_search_store() {
     if (PPU->VALID_OAM) {
         uint16_t oam_address = PPU->CURRENT_OBJ->address;
-        uint8_t tile_index = MEMORY[oam_address + 2];
         uint8_t oam_attributes = MEMORY[oam_address + 3];
-        PPU->CURRENT_OBJ->tile_index = tile_index;
+        PPU->CURRENT_OBJ->tile_index = MEMORY[oam_address + 2];
         PPU->CURRENT_OBJ->priority = oam_attributes & 0x80;
         PPU->CURRENT_OBJ->y_flip = oam_attributes & 0x40;
         PPU->CURRENT_OBJ->x_flip = oam_attributes & 0x20;
@@ -77,52 +80,64 @@ static void construct_pixel_data() {
     uint8_t bit_1;
     uint8_t pixel;
     for (int8_t i = 7, j = 0; i >= 0; i--, j++) {
-        bit_0 = (data_low >> i) & 1;
-        bit_1 = (data_high >> i) & 1;
+        bit_0 = (data_low >> i) & 0x01;
+        bit_1 = (data_high >> i) & 0x01;
         pixel = (bit_1 << 1) | bit_0;
         PPU->PIXEL_DATA[j].binary_data = pixel;
         PPU->PIXEL_DATA[j].source = PPU->FETCH_TYPE;
     }
-    PPU->PIXEL_TRANSFER_STATE = PUSH;
 }
 
 
 static void fetch_tile() {
     uint8_t tile_x;
+    uint8_t tile_y;
     uint16_t base_address;
     uint16_t tile_map_address;
     if (PPU->FETCH_TYPE == WINDOW) {
         base_address = MEMORY[LCDC] & 0x40 ? 0x9C00 : 0x9800;
         tile_x = PPU->FETCHER_X;
-        PPU->FETCHER_Y = MEMORY[LY] - MEMORY[WY];
-        tile_map_address = base_address + tile_x + ((PPU->FETCHER_Y / 8) * 32);
-        PPU->TILE_NUMBER = MEMORY[tile_map_address];
-        PPU->PIXEL_DATA->source = WINDOW;
+        tile_y = MEMORY[LY] - MEMORY[WY];
+        tile_map_address = base_address + tile_x + ((tile_y / 8) * 32);
+        PPU->TILE_INDEX = MEMORY[tile_map_address];
     }
     else if (PPU->FETCH_TYPE == BACKGROUND) {
         base_address = MEMORY[LCDC] & 0x08 ? 0x9C00 : 0x9800;
         tile_x = ((MEMORY[SCX] / 8) + PPU->FETCHER_X) & 0x1F;
-        PPU->FETCHER_Y = (MEMORY[LY] + MEMORY[SCY]) & 0xFF;
-        tile_map_address = base_address + tile_x + ((PPU->FETCHER_Y / 8) * 32);
+        tile_y = (MEMORY[LY] + MEMORY[SCY]) & 0xFF;
+        tile_map_address = (base_address + tile_x + ((tile_y / 8) * 32));
         //TODO IF VRAM IS BLOCKED THAN TILE NUMBER WILL BE READ AS 0xFF
-        PPU->TILE_NUMBER = MEMORY[tile_map_address];
-        PPU->PIXEL_DATA->source = BACKGROUND;
+        PPU->TILE_INDEX = MEMORY[tile_map_address];
     }
     else {
-        PPU->TILE_NUMBER = heap_peek_tile_num();
-        PPU->PIXEL_DATA->source = OBJECT;
+        PPU->TILE_INDEX = heap_peek()->tile_index;
+        if (MEMORY[LCDC] & 0x04) {
+            PPU->TILE_INDEX &= 0xFE;
+        }
     }
     PPU->PIXEL_TRANSFER_STATE = GET_DATA_LOW;
 }
 
 static void get_tile_data_low() {
+    //get base address
     if ((MEMORY[LCDC] & 0x10) || (PPU->FETCH_TYPE == OBJECT)) {
-        PPU->TILE_ADDRESS = 0x8000 + (PPU->TILE_NUMBER * BITS_PER_TILE);
+        PPU->TILE_ADDRESS = 0x8000 + (PPU->TILE_INDEX * BITS_PER_TILE);
     }
     else {
-        PPU->TILE_ADDRESS = 0x9000 + ((int8_t)PPU->TILE_NUMBER * BITS_PER_TILE);
+        PPU->TILE_ADDRESS = 0x9000 + ((int8_t)PPU->TILE_INDEX * BITS_PER_TILE);
     }
-    PPU->TILE_ADDRESS += 2 * (((MEMORY[LY] + MEMORY[SCY]) & 0xFF) % 8);
+    //add offset from pixel's y_position in the tile
+    if (PPU->FETCH_TYPE != OBJECT) {
+        PPU->TILE_ADDRESS += 2 * (((MEMORY[LY] + MEMORY[SCY]) & 0xFF) % 8);
+    }
+    else {
+        uint8_t y_offset = MEMORY[LY] - (heap_peek()->y_pos - 16);
+        if (heap_peek()->y_flip) {
+            uint8_t sprite_height = (MEMORY[LCDC] & 0x04) ? 16 : 8;
+            y_offset = sprite_height - 1 - y_offset;
+        }
+        PPU->TILE_ADDRESS += 2 * y_offset;
+    }
     PPU->DATA_LOW = MEMORY[PPU->TILE_ADDRESS];
     PPU->PIXEL_TRANSFER_STATE = GET_DATA_HIGH;
 }
@@ -130,7 +145,6 @@ static void get_tile_data_low() {
 static void get_tile_data_high() {
     PPU->DATA_HIGH = MEMORY[PPU->TILE_ADDRESS+1];
     if (PPU->FETCH_TYPE == BACKGROUND && PPU->RENDER_X == 0 && !PPU->FIRST_TILE_DONE) {
-        //TODO COME BACK TO THIS
         PPU->FIRST_TILE_DONE = true;
         PPU->PIXEL_TRANSFER_STATE = FETCH_TILE;
     }
@@ -147,9 +161,6 @@ static void pixel_push() {
         PPU->PIXEL_TRANSFER_STATE = FETCH_TILE;
     }
     else if (PPU->FETCH_TYPE == OBJECT) {
-        if (heap_peek_y_flip()) {
-            perror("Need to flip y");
-        }
         if (pixel_fifo_is_empty(PPU->SPRITE_FIFO)) {
             sprite_fifo_push(PPU->PIXEL_DATA);
         }
@@ -158,21 +169,8 @@ static void pixel_push() {
         }
         heap_delete_min();
         PPU->PIXEL_TRANSFER_STATE = FETCH_TILE;
-
-        uint8_t obj_x_coord = heap_peek_x_pos();
-        if (obj_x_coord == PPU->RENDER_X + 8) {
-            PPU->FETCH_TYPE = OBJECT;
-            return;
-        }
-        else if ((MEMORY[WX] - 7 >= PPU->FETCHER_X) && (MEMORY[LCDC] & 0x20)) {
-            PPU->FETCH_TYPE = WINDOW;
-        }
-        else {
-            PPU->FETCH_TYPE = BACKGROUND;
-        }
-
+        PPU->FETCH_TYPE = BACKGROUND;
         PPU->POP_ENABLE = true;
-        pop_pixel();
     }
 }
 
@@ -192,7 +190,7 @@ static void pop_pixel() {
         pixel_fifo_pop(PPU->SPRITE_FIFO, &obj_pixel_data);
         bool transparent = obj_pixel_data.binary_data == 0x00;
         bool priority = obj_pixel_data.priority && (bg_pixel_data.source != 0);
-        pixel_data = transparent && priority ? obj_pixel_data : bg_pixel_data;
+        pixel_data = transparent || priority ? bg_pixel_data : obj_pixel_data;
     }
     //pop from background fifo
     else {
@@ -226,7 +224,7 @@ static void pixel_renderer() {
         return;
     }
     //check for object
-    uint8_t obj_x_coord = heap_peek_x_pos();
+    uint8_t obj_x_coord = heap_peek()->x_pos;
     if (obj_x_coord == PPU->RENDER_X + 8) {
         PPU->POP_ENABLE = false;
         PPU->FETCH_TYPE = OBJECT;
@@ -289,7 +287,7 @@ void v_blank() {
         MEMORY[LY] = 0;
         check_lyc_interrupt();
         PPU->RENDER_LINE_CYCLE = 0;
-        PPU->FIRST_TILE_DONE = 0;
+        PPU->FIRST_TILE_DONE = false;
         PPU->STATE = OAM_SEARCH;
         MEMORY[STAT] = (MEMORY[STAT] & 0xFC) | 0x02;
         if (MEMORY[STAT] & 0x20) {
@@ -332,7 +330,6 @@ void execute_next_PPU_cycle() {
             PPU->RENDER_LINE_CYCLE % 2 ? oam_search_validate() : oam_search_store();
             break;
         case PIXEL_TRANSFER:
-            pixel_renderer();
             switch (PPU->PIXEL_TRANSFER_STATE) {
                 case FETCH_TILE:
                     fetch_tile();
@@ -350,6 +347,7 @@ void execute_next_PPU_cycle() {
                     pixel_push();
                     break;
             }
+            pixel_renderer();
             break;
         case H_BLANK:
             h_blank();

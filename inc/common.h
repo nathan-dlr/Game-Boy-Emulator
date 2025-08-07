@@ -46,7 +46,7 @@
 #define WY 0xFF4A
 #define WX 0xFF4B
 #define KEY1 0xFF4D
-#define VBK 0xFF4f
+#define VBK 44
 #define HDMA1 0xFF51
 #define HDMA2 0xFF52
 #define HDMA3 0xFF53
