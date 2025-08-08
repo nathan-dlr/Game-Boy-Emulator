@@ -28,9 +28,10 @@ typedef struct PPU_STRUCT {
     uint8_t NUM_SCROLL_PIXELS;
     uint8_t PENALTY;
     bool POP_ENABLE;
+    uint8_t WINDOW_LINE_COUNTER;
     //FETCHER DATA
     uint8_t FETCHER_X;  //incremented per 8 pixels fetched
-    uint16_t TILE_INDEX;
+    uint8_t TILE_INDEX;
     uint16_t TILE_ADDRESS;
     uint8_t DATA_LOW;
     uint8_t DATA_HIGH;

@@ -71,7 +71,8 @@ enum FETCH_SOURCE {
 
 enum PALETTE {
     OBJ_P0,
-    OBJ_P1
+    OBJ_P1,
+    NOT_OBJ
 };
 
 
@@ -80,6 +81,8 @@ typedef struct PIXEL_DATA {
     enum FETCH_SOURCE source;
     bool palette;
     bool priority;
+    uint16_t address;
+    bool x_flip;
 } PIXEL_DATA;
 
 typedef struct PIXEL_FIFO {

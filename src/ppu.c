@@ -27,6 +27,7 @@ void ppu_init() {
     PPU->PENALTY = 0;
     PPU->POP_ENABLE = true;
     PPU->FIRST_TILE_DONE = false;
+    PPU->WINDOW_LINE_COUNTER = 0;
 }
 
 void ppu_free() {
@@ -79,12 +80,21 @@ static void construct_pixel_data() {
     uint8_t bit_0;
     uint8_t bit_1;
     uint8_t pixel;
+    enum FETCH_SOURCE source = PPU->FETCH_TYPE;
+    bool is_obj = source == OBJECT;
+    OAM_STRUCT* obj = heap_peek();
     for (int8_t i = 7, j = 0; i >= 0; i--, j++) {
         bit_0 = (data_low >> i) & 0x01;
         bit_1 = (data_high >> i) & 0x01;
         pixel = (bit_1 << 1) | bit_0;
         PPU->PIXEL_DATA[j].binary_data = pixel;
-        PPU->PIXEL_DATA[j].source = PPU->FETCH_TYPE;
+        PPU->PIXEL_DATA[j].source = source;
+        if (is_obj) {
+            PPU->PIXEL_DATA[j].address = obj->address;
+            PPU->PIXEL_DATA[j].palette = obj->palette;
+            PPU->PIXEL_DATA[j].priority = obj->priority;
+            PPU->PIXEL_DATA[j].x_flip = obj->x_flip;
+        }
     }
 }
 
@@ -97,7 +107,7 @@ static void fetch_tile() {
     if (PPU->FETCH_TYPE == WINDOW) {
         base_address = MEMORY[LCDC] & 0x40 ? 0x9C00 : 0x9800;
         tile_x = PPU->FETCHER_X;
-        tile_y = MEMORY[LY] - MEMORY[WY];
+        tile_y = PPU->WINDOW_LINE_COUNTER;
         tile_map_address = base_address + tile_x + ((tile_y / 8) * 32);
         PPU->TILE_INDEX = MEMORY[tile_map_address];
     }
@@ -127,8 +137,11 @@ static void get_tile_data_low() {
         PPU->TILE_ADDRESS = 0x9000 + ((int8_t)PPU->TILE_INDEX * BITS_PER_TILE);
     }
     //add offset from pixel's y_position in the tile
-    if (PPU->FETCH_TYPE != OBJECT) {
-        PPU->TILE_ADDRESS += 2 * (((MEMORY[LY] + MEMORY[SCY]) & 0xFF) % 8);
+    if (PPU->FETCH_TYPE == BACKGROUND) {
+        PPU->TILE_ADDRESS += 2 * (((MEMORY[LY] + MEMORY[SCY])) % 8);
+    }
+    else if (PPU->FETCH_TYPE == WINDOW) {
+        PPU->TILE_ADDRESS += 2 * ((PPU->WINDOW_LINE_COUNTER) % 8);
     }
     else {
         uint8_t y_offset = MEMORY[LY] - (heap_peek()->y_pos - 16);
@@ -161,15 +174,10 @@ static void pixel_push() {
         PPU->PIXEL_TRANSFER_STATE = FETCH_TILE;
     }
     else if (PPU->FETCH_TYPE == OBJECT) {
-        if (pixel_fifo_is_empty(PPU->SPRITE_FIFO)) {
-            sprite_fifo_push(PPU->PIXEL_DATA);
-        }
-        else {
-            perror("need to compare priority of objects before continuing");
-        }
+        sprite_fifo_push(PPU->PIXEL_DATA);
         heap_delete_min();
         PPU->PIXEL_TRANSFER_STATE = FETCH_TILE;
-        PPU->FETCH_TYPE = BACKGROUND;
+        PPU->FETCH_TYPE =  (PPU->RENDER_X == MEMORY[WX] - 7) && (MEMORY[LCDC] & 0x20) ? WINDOW : BACKGROUND;
         PPU->POP_ENABLE = true;
     }
 }
@@ -189,7 +197,7 @@ static void pop_pixel() {
         pixel_fifo_pop(PPU->BACKGROUND_FIFO, &bg_pixel_data);
         pixel_fifo_pop(PPU->SPRITE_FIFO, &obj_pixel_data);
         bool transparent = obj_pixel_data.binary_data == 0x00;
-        bool priority = obj_pixel_data.priority && (bg_pixel_data.source != 0);
+        bool priority = obj_pixel_data.priority && (bg_pixel_data.binary_data != 0x00);
         pixel_data = transparent || priority ? bg_pixel_data : obj_pixel_data;
     }
     //pop from background fifo
@@ -220,20 +228,18 @@ static void pixel_renderer() {
     if ((PPU->RENDER_X == MEMORY[WX] - 7) && (PPU->FETCH_TYPE == BACKGROUND) && (MEMORY[LCDC] & 0x20)) {
         pixel_fifo_clear(PPU->BACKGROUND_FIFO);
         PPU->PIXEL_TRANSFER_STATE = FETCH_TILE;
+        PPU->FETCHER_X = 0;
         PPU->FETCH_TYPE = WINDOW;
+        PPU->WINDOW_LINE_COUNTER++;
         return;
     }
     //check for object
-    //TODO MAKE LESS UGLY
     OAM_STRUCT* obj = heap_peek();
-    if (obj) {
-        uint8_t obj_x_coord = heap_peek()->x_pos;
-        if (obj_x_coord == PPU->RENDER_X + 8) {
-            PPU->POP_ENABLE = false;
-            PPU->FETCH_TYPE = OBJECT;
-            PPU->PIXEL_TRANSFER_STATE = FETCH_TILE;
-            return;
-        }
+    if (obj && obj->x_pos == PPU->RENDER_X + 8) {
+        PPU->POP_ENABLE = false;
+        PPU->FETCH_TYPE = OBJECT;
+        PPU->PIXEL_TRANSFER_STATE = FETCH_TILE;
+        return;
     }
     //pixel_renderer if enough data in fifo
     if (!pixel_fifo_is_empty(PPU->BACKGROUND_FIFO)) {
@@ -291,6 +297,7 @@ void v_blank() {
         MEMORY[LY] = 0;
         check_lyc_interrupt();
         PPU->RENDER_LINE_CYCLE = 0;
+        PPU->WINDOW_LINE_COUNTER = 0;
         PPU->FIRST_TILE_DONE = false;
         PPU->STATE = OAM_SEARCH;
         MEMORY[STAT] = (MEMORY[STAT] & 0xFC) | 0x02;

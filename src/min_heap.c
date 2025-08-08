@@ -50,7 +50,7 @@ OAM_STRUCT* heap_peek() {
         return NULL;
     }
     else {
-        return OBJ_HEAP->objects;
+        return OBJ_HEAP->objects[0];
     }
 }
 
@@ -72,10 +72,7 @@ void heapify_up(uint8_t index) {
         OAM_STRUCT* child_obj = OBJ_HEAP->objects[index];
         OAM_STRUCT* parent_obj = OBJ_HEAP->objects[parent];
 
-        if (child_obj->x_pos > parent_obj->x_pos) {
-            break;
-        }
-        if (child_obj->x_pos == parent_obj->x_pos && child_obj->address >= parent_obj->address) {
+        if (child_obj->x_pos >= parent_obj->x_pos) {
             break;
         }
 
@@ -93,7 +90,7 @@ static int8_t compare_nodes(int8_t current, int8_t left, int8_t right) {
     if (left < OBJ_HEAP->size) {
         OAM_STRUCT* left_obj = OBJ_HEAP->objects[left];
         OAM_STRUCT* current_obj = OBJ_HEAP->objects[min];
-        if (left_obj->x_pos < current_obj->x_pos || (left_obj->x_pos == current_obj->x_pos && left_obj->address < current_obj->address)) {
+        if (left_obj->x_pos < current_obj->x_pos) {
             min = left;
         }
     }
@@ -101,11 +98,10 @@ static int8_t compare_nodes(int8_t current, int8_t left, int8_t right) {
     if (right < OBJ_HEAP->size) {
         OAM_STRUCT* right_obj = OBJ_HEAP->objects[right];
         OAM_STRUCT* current_obj = OBJ_HEAP->objects[min];
-        if (right_obj->x_pos < current_obj->x_pos || (right_obj->x_pos == current_obj->x_pos && right_obj->address < current_obj->address)) {
+        if (right_obj->x_pos < current_obj->x_pos) {
             min = right;
         }
     }
-
     return min;
 }
 
