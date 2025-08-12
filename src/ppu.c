@@ -94,6 +94,7 @@ static void construct_pixel_data() {
         if (is_obj) {
             PPU->PIXEL_DATA[j].address = obj->address;
             PPU->PIXEL_DATA[j].palette = obj->palette;
+
             PPU->PIXEL_DATA[j].priority = obj->priority;
             PPU->PIXEL_DATA[j].x_flip = obj->x_flip;
         }
@@ -179,7 +180,12 @@ static void pixel_push() {
         sprite_fifo_push(PPU->PIXEL_DATA);
         heap_delete_min();
         PPU->PIXEL_TRANSFER_STATE = FETCH_TILE;
-        PPU->FETCH_TYPE =  (PPU->RENDER_X == MEMORY[WX] - 7) && (MEMORY[LCDC] & 0x20) ? WINDOW : BACKGROUND;
+        if ((PPU->RENDER_X >= MEMORY[WX] - 7) && (MEMORY[LY] > MEMORY[WY]) && (MEMORY[LCDC] & 0x20)) {
+            PPU->FETCH_TYPE = WINDOW;
+        }
+        else {
+            PPU->FETCH_TYPE = BACKGROUND;
+        }
         PPU->POP_ENABLE = true;
     }
 }
@@ -194,21 +200,26 @@ static void pop_pixel() {
         return;
     //merge pixel from both fifos
     } else if (!pixel_fifo_is_empty(PPU->SPRITE_FIFO)) {
-        //printf("Render X: %d Render line cycle: %d OBJECT\n", PPU->RENDER_X, PPU->RENDER_LINE_CYCLE - 80);
         PIXEL_DATA bg_pixel_data;
         PIXEL_DATA obj_pixel_data;
         pixel_fifo_pop(PPU->BACKGROUND_FIFO, &bg_pixel_data);
         pixel_fifo_pop(PPU->SPRITE_FIFO, &obj_pixel_data);
-        bool transparent = obj_pixel_data.binary_data == 0x00;
-        bool priority = obj_pixel_data.priority && (bg_pixel_data.binary_data != 0x00);
-        pixel_data = transparent || priority ? bg_pixel_data : obj_pixel_data;
+        if (MEMORY[LCDC] & 0x01) {
+            bool transparent = obj_pixel_data.binary_data == 0x00;
+            bool priority = obj_pixel_data.priority && (bg_pixel_data.binary_data != 0x00);
+            if (obj_pixel_data.priority && obj_pixel_data.binary_data != 0x00) {
+                0+0;
+            }
+            pixel_data = transparent || priority ? bg_pixel_data : obj_pixel_data;
+        }
+        if (!(MEMORY[LCDC] & 0x02)) {
+            pixel_data = bg_pixel_data;
+        }
     }
     //pop from background fifo
     else {
-        //printf("Render X: %d Render line cycle: %d BACKGROUND\n", PPU->RENDER_X, PPU->RENDER_LINE_CYCLE - 80);
         pixel_fifo_pop(PPU->BACKGROUND_FIFO, &pixel_data);
     }
-
     lcd_update_pixel(&pixel_data);
     PPU->RENDER_X++;
     if (PPU->RENDER_X == 160) {
@@ -239,6 +250,10 @@ static void pixel_renderer() {
     }
     //check for object
     OAM_STRUCT* obj = heap_peek();
+    if (obj && obj->x_pos < PPU->RENDER_X + 8) {
+        heap_delete_min();
+        obj = heap_peek();
+    }
     if (obj && obj->x_pos == PPU->RENDER_X + 8) {
         PPU->POP_ENABLE = false;
         PPU->FETCH_TYPE = OBJECT;
@@ -315,14 +330,15 @@ void v_blank() {
 }
 
 void execute_next_PPU_cycle() {
+    if (PPU->RENDER_X == 103 && MEMORY[LY] == 41) {
+        0 + 0;
+    }
     if ((PPU->RENDER_LINE_CYCLE > 80) && (PPU->STATE == OAM_SEARCH)) {
         perror("OAM search exceeded 80 t cycles");
         free_resources();
         exit(1);
     }
     if ((PPU->RENDER_LINE_CYCLE > 369) && (PPU->STATE == PIXEL_TRANSFER)) {
-        printf("render x: %d\n", PPU->RENDER_X);
-        printf("LY: %d\n", MEMORY[LY]);
         perror("Pixel transfer exceeded max cycles");
         free_resources();
         exit(1);

@@ -70,8 +70,8 @@ void lcd_update_pixel(PIXEL_DATA* pixel_data) {
         pixel_color = (palette >> (color_index * 2)) & 0x03;
         pixel_rgb = COLORS_RGB[pixel_color];
     }
-    else if ((source == OBJECT)) {
-        palette = pixel_data->palette == OBJ_P0 ? MEMORY[OBP0] : MEMORY[OBP1];
+    else if (source == OBJECT) {
+        palette = pixel_data->palette ? MEMORY[OBP1] : MEMORY[OBP0];
         pixel_color = (palette >> (color_index * 2)) & 0x03;
         pixel_rgb = COLORS_RGB[pixel_color];
     }
