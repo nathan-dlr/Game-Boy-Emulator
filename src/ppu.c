@@ -69,6 +69,8 @@ static void oam_search_store() {
     }
     if (PPU->RENDER_LINE_CYCLE == 80) {
         PPU->STATE = PIXEL_TRANSFER;
+        PPU->PIXEL_TRANSFER_STATE = FETCH_TILE;
+        PPU->FETCH_TYPE = BACKGROUND;
         MEMORY[STAT] = (MEMORY[STAT] & 0xFC) | 0x03;
         PPU->NUM_SCROLL_PIXELS = MEMORY[SCX] % 8;
     }
@@ -163,8 +165,8 @@ static void get_tile_data_high() {
     }
     else {
         PPU->PIXEL_TRANSFER_STATE = PUSH;
+        construct_pixel_data();
     }
-    construct_pixel_data();
 }
 
 static void pixel_push() {
@@ -192,6 +194,7 @@ static void pop_pixel() {
         return;
     //merge pixel from both fifos
     } else if (!pixel_fifo_is_empty(PPU->SPRITE_FIFO)) {
+        //printf("Render X: %d Render line cycle: %d OBJECT\n", PPU->RENDER_X, PPU->RENDER_LINE_CYCLE - 80);
         PIXEL_DATA bg_pixel_data;
         PIXEL_DATA obj_pixel_data;
         pixel_fifo_pop(PPU->BACKGROUND_FIFO, &bg_pixel_data);
@@ -202,14 +205,15 @@ static void pop_pixel() {
     }
     //pop from background fifo
     else {
+        //printf("Render X: %d Render line cycle: %d BACKGROUND\n", PPU->RENDER_X, PPU->RENDER_LINE_CYCLE - 80);
         pixel_fifo_pop(PPU->BACKGROUND_FIFO, &pixel_data);
     }
 
     lcd_update_pixel(&pixel_data);
     PPU->RENDER_X++;
     if (PPU->RENDER_X == 160) {
-        PPU->RENDER_X = 0;
         PPU->FETCHER_X = 0;
+        PPU->RENDER_X = 0;
         pixel_fifo_clear(PPU->BACKGROUND_FIFO);
         pixel_fifo_clear(PPU->SPRITE_FIFO);
         PPU->STATE = H_BLANK;
@@ -221,11 +225,11 @@ static void pop_pixel() {
 }
 
 static void pixel_renderer() {
-    if (!PPU->POP_ENABLE) {
+    if (!PPU->POP_ENABLE || PPU->STATE != PIXEL_TRANSFER) {
         return;
     }
     //Check for window
-    if ((PPU->RENDER_X == MEMORY[WX] - 7) && (PPU->FETCH_TYPE == BACKGROUND) && (MEMORY[LCDC] & 0x20)) {
+    if ((PPU->RENDER_X == MEMORY[WX] - 7) && (MEMORY[LY] > MEMORY[WY]) && (PPU->FETCH_TYPE == BACKGROUND) && (MEMORY[LCDC] & 0x20)) {
         pixel_fifo_clear(PPU->BACKGROUND_FIFO);
         PPU->PIXEL_TRANSFER_STATE = FETCH_TILE;
         PPU->FETCHER_X = 0;
@@ -318,6 +322,7 @@ void execute_next_PPU_cycle() {
     }
     if ((PPU->RENDER_LINE_CYCLE > 369) && (PPU->STATE == PIXEL_TRANSFER)) {
         printf("render x: %d\n", PPU->RENDER_X);
+        printf("LY: %d\n", MEMORY[LY]);
         perror("Pixel transfer exceeded max cycles");
         free_resources();
         exit(1);

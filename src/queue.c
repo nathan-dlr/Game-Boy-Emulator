@@ -148,7 +148,6 @@ void pixel_fifo_pop(PIXEL_FIFO* PIXEL_FIFO, PIXEL_DATA* ret) {
         PIXEL_FIFO->front = (PIXEL_FIFO->front + 1) % PIXEL_FIFO_CAPACITY;
         PIXEL_FIFO->size--;
     }
-
 }
 
 uint8_t pixel_fifo_size(const PIXEL_FIFO* PIXEL_FIFO) {
