@@ -183,104 +183,73 @@ static void load_immediate_add_16bit(uint8_t opcode) {
 static void indirect_loading(uint8_t opcode) {
     uint8_t bit_three = GET_BIT_THREE(opcode);
     uint8_t bits_four_five = GET_BITS_FOUR_FIVE(opcode);
-    execute_func func = bit_three ? &ld_r8_addr_bus : &write_memory;
-    uint8_t param = bit_three ? A : UNUSED_VAL;
-    CPU->DATA_BUS = CPU->REGS[A];
-    switch (bits_four_five) {
-        case 0:
-            CPU->ADDRESS_BUS = read_16bit_reg(BC);
-            instr_queue_push(func, param);
-            return;
-        case 1:
-            CPU->ADDRESS_BUS = read_16bit_reg(DE);
-            instr_queue_push(func, param);
-            return;
-        case 2:
-            CPU->ADDRESS_BUS = read_16bit_reg(HL);
-            write_16bit_reg(HL, read_16bit_reg(HL) + 1);
-            instr_queue_push(func, param);
-            return;
-        case 3:
-            CPU->ADDRESS_BUS = read_16bit_reg(HL);
-            write_16bit_reg(HL, read_16bit_reg(HL) - 1);
-            instr_queue_push(func, param);
-            return;
-        default:
-            perror("Invalid opcode in decoding indirect loading");
+    uint16_t hl_val;
+    if (bit_three) {
+        switch (bits_four_five) {
+            //LD A, [BC] - 2 cycles: decode/read -> ld_r8_data_bus
+            case 0:
+                CPU->ADDRESS_BUS = read_16bit_reg(BC);
+                read_memory(UNUSED_VAL);
+                instr_queue_push(ld_r8_data_bus, A);
+                break;
+            //LD A, [DE] - 2 cycles: decode/read -> ld_r8_data_bus
+            case 1:
+                CPU->ADDRESS_BUS = read_16bit_reg(DE);
+                read_memory(UNUSED_VAL);
+                instr_queue_push(ld_r8_data_bus, A);
+                break;
+            //LD A, [HL+]
+            case 2:
+                hl_val = read_16bit_reg(HL);
+                CPU->ADDRESS_BUS = hl_val;
+                read_memory(UNUSED_VAL);
+                write_16bit_reg(HL, hl_val + 1);
+                instr_queue_push(ld_r8_data_bus, A);
+                break;
+            //LD A, [HL-]
+            case 3:
+                hl_val = read_16bit_reg(HL);
+                CPU->ADDRESS_BUS = hl_val;
+                read_memory(UNUSED_VAL);
+                write_16bit_reg(HL, hl_val - 1);
+                instr_queue_push(ld_r8_data_bus, A);
+                break;
+            default:
+                perror("Invalid opcode in decoding indirect loading");
+        }
+    }
+    else {
+        CPU->DATA_BUS = CPU->REGS[A];
+        switch (bits_four_five) {
+            //LD [BC], A - 2 cycles: decode/write -> next_instr
+            case 0:
+                CPU->ADDRESS_BUS = read_16bit_reg(BC);
+                instr_queue_push(write_memory, UNUSED_VAL);
+                break;
+            //LD [DE], A
+            case 1:
+                CPU->ADDRESS_BUS = read_16bit_reg(DE);;
+                instr_queue_push(write_memory, UNUSED_VAL);
+                break;
+            //LD [HL+], A
+            case 2:
+                hl_val = read_16bit_reg(HL);
+                CPU->ADDRESS_BUS = hl_val;
+                write_16bit_reg(HL, hl_val + 1);
+                instr_queue_push(write_memory, UNUSED_VAL);
+                break;
+            //LD [HL-], A
+            case 3:
+                hl_val = read_16bit_reg(HL);
+                CPU->ADDRESS_BUS = hl_val;
+                write_16bit_reg(HL, hl_val - 1);
+                instr_queue_push(write_memory, UNUSED_VAL);
+                break;
+            default:
+                perror("Invalid opcode in decoding indirect loading");
+        }
     }
 }
-
-//TODO make work
-//static void indirect_loading(uint8_t opcode) {
-//    uint8_t bit_three = GET_BIT_THREE(opcode);
-//    uint8_t bits_four_five = GET_BITS_FOUR_FIVE(opcode);
-//    uint16_t hl_val;
-//    if (bit_three) {
-//        switch (bits_four_five) {
-//            //LD A, [BC] - 2 cycles: decode/read -> ld_r8_data_bus
-//            case 0:
-//                CPU->ADDRESS_BUS = read_16bit_reg(BC);
-//                read_memory(UNUSED_VAL);
-//                instr_queue_push(ld_r8_data_bus, A);
-//                break;
-//            //LD A, [DE] - 2 cycles: decode/read -> ld_r8_data_bus
-//            case 1:
-//                CPU->ADDRESS_BUS = read_16bit_reg(BC);
-//                read_memory(UNUSED_VAL);
-//                instr_queue_push(ld_r8_data_bus, A);
-//                break;
-//            //LD A, [HL+]
-//            case 2:
-//                hl_val = read_16bit_reg(HL);
-//                CPU->ADDRESS_BUS = hl_val;
-//                read_memory(UNUSED_VAL);
-//                write_16bit_reg(HL, hl_val + 1);
-//                instr_queue_push(ld_r8_data_bus, A);
-//                break;
-//            //LD A, [HL-]
-//            case 3:
-//                hl_val = read_16bit_reg(HL);
-//                CPU->ADDRESS_BUS = hl_val;
-//                read_memory(UNUSED_VAL);
-//                write_16bit_reg(HL, hl_val - 1);
-//                instr_queue_push(ld_r8_data_bus, A);
-//                break;
-//            default:
-//                perror("Invalid opcode in decoding indirect loading");
-//        }
-//    }
-//    else {
-//        CPU->DATA_BUS = CPU->REGS[A];
-//        switch (bits_four_five) {
-//            //LD [BC], A - 2 cycles: decode/write -> next_instr
-//            case 0:
-//                CPU->ADDRESS_BUS = read_16bit_reg(BC);
-//                instr_queue_push(write_memory, UNUSED_VAL);
-//                break;
-//            //LD [DE], A
-//            case 1:
-//                CPU->ADDRESS_BUS = read_16bit_reg(DE);;
-//                instr_queue_push(write_memory, UNUSED_VAL);
-//                break;
-//            //LD [HL+], A
-//            case 2:
-//                hl_val = read_16bit_reg(HL);
-//                CPU->ADDRESS_BUS = hl_val;
-//                write_16bit_reg(HL, hl_val + 1);
-//                instr_queue_push(write_memory, UNUSED_VAL);
-//                break;
-//            //LD [HL-], A
-//            case 3:
-//                hl_val = read_16bit_reg(HL);
-//                CPU->ADDRESS_BUS = hl_val;
-//                write_16bit_reg(HL, hl_val - 1);
-//                instr_queue_push(write_memory, UNUSED_VAL);
-//                break;
-//            default:
-//                perror("Invalid opcode in decoding indirect loading");
-//        }
-//    }
-//}
 
 
 static void inc_or_dec(uint8_t opcode) {
@@ -429,7 +398,8 @@ static void mem_mapped_ops(uint8_t opcode) {
             instr_queue_push(add_sp_e8, 3);
             instr_queue_push(add_sp_e8, 4);
             return;
-        //LDH A,[n16] - 3 cycles: decode -> read_next_byte -> read_memory/ld_r8_bus
+        //TODO
+        //LDH A,[0xFF00 + imm8] - 3 cycles: decode -> read_next_byte -> read_memory/ld_r8_bus
         case 6:
             instr_queue_push(ldh_imm8, UNUSED_VAL);
             instr_queue_push(ld_r8_addr_bus, A);

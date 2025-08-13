@@ -33,7 +33,6 @@
 #define JOYPAD_VEC 0x60
 
 static bool check_interrupts();
-static FILE* log;
 
 void cpu_init() {
     CPU = (CPU_STRUCT*) malloc(sizeof(CPU_STRUCT));
@@ -47,7 +46,6 @@ void cpu_init() {
     CPU->IME = false;
     CPU->DMA_CYCLE = 0;
     CYCLE_COUNT = 0;
-    log =  fopen("logfile", "w");
 }
 
 /*
@@ -59,28 +57,6 @@ void cpu_init() {
 void execute_next_CPU_cycle() {
     if (is_empty(INSTR_QUEUE)) {
         if (!check_interrupts() && CPU->STATE == RUNNING) {
-            fprintf(log, "A:%02X F:%02X B:%02X C:%02X D:%02X E:%02X H:%02X L:%02X SP:%04X PC:%04X PCMEM:%02X,%02X,%02X,%02X\n",
-                    CPU->REGS[A],
-                    CPU->REGS[F],
-                    CPU->REGS[B],
-                    CPU->REGS[C],
-                    CPU->REGS[D],
-                    CPU->REGS[E],
-                    CPU->REGS[H],
-                    CPU->REGS[L],
-                    read_16bit_reg(SP),
-                    read_16bit_reg(PC),
-                    MEMORY[read_16bit_reg(PC)],
-                    MEMORY[read_16bit_reg(PC) + 1],
-                    MEMORY[read_16bit_reg(PC) + 2],
-                    MEMORY[read_16bit_reg(PC) + 3]);
-            fseek(log, 0, SEEK_END);
-
-            if (ftell(log) >= 0x10000000) {
-                fclose(log);
-                free_resources();
-                exit(0);
-            }
             read_next_byte();
             decode();
         }
