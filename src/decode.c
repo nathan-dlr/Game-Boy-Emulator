@@ -401,8 +401,12 @@ static void mem_mapped_ops(uint8_t opcode) {
         //TODO
         //LDH A,[0xFF00 + imm8] - 3 cycles: decode -> read_next_byte -> read_memory/ld_r8_bus
         case 6:
-            instr_queue_push(ldh_imm8, UNUSED_VAL);
-            instr_queue_push(ld_r8_addr_bus, A);
+//            instr_queue_push(ldh_imm8, UNUSED_VAL);
+//            instr_queue_push(ld_r8_addr_bus, A);
+            instr_queue_push(ldh_a_imm8, 2);
+            instr_queue_push(ldh_a_imm8, 3);
+
+
             return;
         //LD HL,SP+e8 - 3 cycles: decode -> read_next_byte -> add_A_8bit and load
         case 7:
@@ -478,9 +482,9 @@ static void conditional_jumps(uint8_t opcode) {
             return;
         //LD A,[n16] - 4 cycles: decode -> read_next_byte -> read_next_byte -> read_memory/ld_r8_bus
         case 7:
-            instr_queue_push(ld_r8_imm8, Z);
-            instr_queue_push(ld_rW_imm8, FALSE);
-            instr_queue_push(ld_r8_addr_bus, A);
+            instr_queue_push(ld_a_imm16, 2);
+            instr_queue_push(ld_a_imm16, 3);
+            instr_queue_push(ld_a_imm16, 4);
             return;
     }
 }

@@ -64,7 +64,10 @@ int main(int argc, char* argv[]) {
  */
 void read_memory(uint8_t UNUSED) {
     (void)UNUSED;
-
+    if (CPU->ADDRESS_BUS == P1) {
+        CPU->DATA_BUS = 0xFF;
+        return;
+    }
 //    if ((PPU->STATE == OAM_SEARCH) && (CPU->ADDRESS_BUS >= 0xFE00) && CPU->ADDRESS_BUS <= 0xFE9F) {
 //        CPU->DATA_BUS = 0xFF;
 //        return;

@@ -5,6 +5,7 @@
 #include <ppu.h>
 #include <lcd.h>
 
+#define SCALE 4
 
 static const uint32_t COLORS_RGB[4] = {
         0xFFFFFFFF, // White
@@ -21,7 +22,7 @@ void lcd_init() {
         exit(1);
     }
 
-    LCD->window = SDL_CreateWindow("Game Boy", WINDOW_WIDTH, WINDOW_HEIGHT, 0);
+    LCD->window = SDL_CreateWindow("Game Boy", WINDOW_WIDTH * SCALE, WINDOW_HEIGHT * SCALE, 0);
     if (!LCD->window) {
         fprintf(stderr, "Error creating window: %s\n", SDL_GetError());
         exit(1);
@@ -33,7 +34,7 @@ void lcd_init() {
         exit(1);
     }
 
-    LCD->surface = SDL_CreateSurface(WINDOW_WIDTH, WINDOW_HEIGHT, SDL_PIXELFORMAT_RGBA8888);
+    LCD->surface = SDL_CreateSurface(WINDOW_WIDTH * SCALE, WINDOW_HEIGHT * SCALE, SDL_PIXELFORMAT_RGBA8888);
     LCD->texture = SDL_CreateTextureFromSurface(LCD->renderer, LCD->surface);
 
     LCD->is_running = true;
@@ -80,8 +81,18 @@ void lcd_update_pixel(PIXEL_DATA* pixel_data) {
     }
 
     uint32_t* surface_pixels = (uint32_t*)LCD->surface->pixels;
-    uint32_t y_offset = MEMORY[LY] * (LCD->surface->pitch / sizeof(uint32_t));
-    surface_pixels[y_offset + PPU->RENDER_X] = pixel_rgb;
+    int dist_between_rows = LCD->surface->pitch / sizeof(uint32_t);
+
+    int gb_x = PPU->RENDER_X;
+    int gb_y = MEMORY[LY];
+    
+    for (int dy = 0; dy < SCALE; dy++) {
+        for (int dx = 0; dx < SCALE; dx++) {
+            int x_offset = gb_x * SCALE + dx;
+            int y_offset = gb_y * SCALE + dy;
+            surface_pixels[y_offset * dist_between_rows + x_offset] = pixel_rgb;
+        }
+    }
 }
 
 void lcd_free() {

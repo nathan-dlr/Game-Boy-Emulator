@@ -209,6 +209,7 @@ void ld_r8_imm8(uint8_t dest) {
     CPU->REGS[dest] = CPU->DATA_BUS;
 }
 
+//TODO ugly function get rid of it
 /*
  * Loads [PC] into temporary register W
  * Puts 8bit register A onto data but if indicated by LOAD_A
@@ -219,6 +220,24 @@ void ld_rW_imm8(uint8_t load_a) {
     CPU->ADDRESS_BUS = read_16bit_reg(WZ);
     if (load_a) {
         CPU->DATA_BUS = CPU->REGS[A];
+    }
+}
+
+void ld_a_imm16(uint8_t cycle) {
+    switch (cycle) {
+        case 2:
+            ld_r8_imm8(Z);
+            break;
+        case 3:
+            ld_r8_imm8(W);
+            CPU->ADDRESS_BUS = read_16bit_reg(WZ);
+            read_memory(UNUSED_VAL);
+            break;
+        case 4:
+            CPU->REGS[A] = CPU->DATA_BUS;
+            break;
+        default:
+            perror("Invalid cycle in LD A, [imm16]");
     }
 }
 
@@ -246,6 +265,22 @@ void ldh_imm8(uint8_t UNUSED) {
     read_next_byte();
     CPU->ADDRESS_BUS = 0xFF00 + CPU->DATA_BUS;
     CPU->DATA_BUS = CPU->REGS[A];
+}
+
+void ldh_a_imm8(uint8_t cycle) {
+    switch (cycle) {
+        case 2:
+            read_next_byte();
+            CPU->ADDRESS_BUS = 0xFF00 + CPU->DATA_BUS;
+            break;
+        case 3:
+            read_memory(UNUSED_VAL);
+            CPU->REGS[A] = CPU->DATA_BUS;
+            break;
+        default:
+            perror("Invalid cycle in ldh_imm8");
+
+    }
 }
 
 /*

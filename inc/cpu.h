@@ -70,6 +70,8 @@ void ld_imm16_sp(uint8_t byte_num);
 void ld_hl_sp8(uint8_t cycle);
 void ld_sp_hl(uint8_t UNUSED);
 void ld_hl_imm8(uint8_t cycle);
+void ld_a_imm16(uint8_t cycle);
+void ldh_a_imm8(uint8_t cycle);
 //8-bit arithmetic
 void add_A_8bit(uint8_t is_imm);
 void adc(uint8_t operand_type);
