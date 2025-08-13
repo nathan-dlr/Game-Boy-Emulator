@@ -60,7 +60,7 @@ int main(int argc, char* argv[]) {
 }
 
 /*
- * Reads byte at CPU->ADDRESS_BUS onto CPU->DATA_BUS
+ * Reads byte pointed to by CPU->ADDRESS_BUS onto CPU->DATA_BUS
  */
 void read_memory(uint8_t UNUSED) {
     (void)UNUSED;

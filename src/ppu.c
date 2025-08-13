@@ -330,9 +330,6 @@ void v_blank() {
 }
 
 void execute_next_PPU_cycle() {
-    if (PPU->RENDER_X == 103 && MEMORY[LY] == 41) {
-        0 + 0;
-    }
     if ((PPU->RENDER_LINE_CYCLE > 80) && (PPU->STATE == OAM_SEARCH)) {
         perror("OAM search exceeded 80 t cycles");
         free_resources();
