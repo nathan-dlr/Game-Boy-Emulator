@@ -17,8 +17,6 @@
 #define NEGATIVE_BIT 0x40
 #define HALF_CARRY_BIT 0x20
 #define CARRY_BIT 0x10
-#define SET_BIT(bit, value) (bit | value)
-#define CLEAR_BIT(bit, value) (~bit & value)
 #define FIRST_NIBBLE(x) (x & 0x000F)
 #define IS_BYTE_IN_MEM(dt_index) (dt_index == 6)
 #define VBLANK_BIT 0x01
@@ -57,6 +55,7 @@ void cpu_init() {
 void execute_next_CPU_cycle() {
     if (is_empty(INSTR_QUEUE)) {
         if (!check_interrupts() && CPU->STATE == RUNNING) {
+            //fetch
             read_next_byte();
             decode();
         }

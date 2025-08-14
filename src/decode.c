@@ -228,7 +228,7 @@ static void indirect_loading(uint8_t opcode) {
                 break;
             //LD [DE], A
             case 1:
-                CPU->ADDRESS_BUS = read_16bit_reg(DE);;
+                CPU->ADDRESS_BUS = read_16bit_reg(DE);
                 instr_queue_push(write_memory, UNUSED_VAL);
                 break;
             //LD [HL+], A

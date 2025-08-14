@@ -45,7 +45,7 @@ int main(int argc, char* argv[]) {
     ppu_init();
     queue_init();
     lcd_init();
-    uint8_t cycles;
+    uint8_t cycles = 0;
     while (LCD->is_running) {
         execute_next_PPU_cycle();
         cycles++;
@@ -65,7 +65,16 @@ int main(int argc, char* argv[]) {
 void read_memory(uint8_t UNUSED) {
     (void)UNUSED;
     if (CPU->ADDRESS_BUS == P1) {
-        CPU->DATA_BUS = 0xFF;
+        uint8_t inputs = MEMORY[P1];
+        if ((inputs & 0x10) == 0x10) {
+            CPU->DATA_BUS = 0x10 | (LCD->buttons & 0x0F);
+        }
+        else if ((inputs & 0x20) == 0x20) {
+            CPU->DATA_BUS = 0x20 | (LCD->d_pad & 0x0F);
+        }
+        else {
+            CPU->DATA_BUS = 0xFF;
+        }
         return;
     }
 //    if ((PPU->STATE == OAM_SEARCH) && (CPU->ADDRESS_BUS >= 0xFE00) && CPU->ADDRESS_BUS <= 0xFE9F) {
@@ -89,6 +98,7 @@ void write_memory(uint8_t UNUSED) {
     //TODO 2 CYCLE DELAY FOR OAM DMA?
     if (CPU->ADDRESS_BUS == DMA) {
         CPU->STATE = OAM_DMA_TRANSFER;
+        CPU->DMA_CYCLE = 0;
     }
 
 //    if ((PPU->STATE == OAM_SEARCH) && (CPU->ADDRESS_BUS >= 0xFE00) && CPU->ADDRESS_BUS <= 0xFE9F) {
@@ -99,7 +109,12 @@ void write_memory(uint8_t UNUSED) {
 //    }
 
     if (CPU->ADDRESS_BUS == STAT) {
-        MEMORY[STAT] = (MEMORY[STAT] & 0x03) | CPU->DATA_BUS;
+        MEMORY[STAT] = (MEMORY[STAT] & 0x07) | (CPU->DATA_BUS & 0xF8);
+        return;
+    }
+    if (CPU->ADDRESS_BUS == P1) {
+        MEMORY[P1] = (MEMORY[P1] & 0x0F) | (CPU->DATA_BUS & 0xF0);
+        return;
     }
 
     MEMORY[CPU->ADDRESS_BUS] = CPU->DATA_BUS;

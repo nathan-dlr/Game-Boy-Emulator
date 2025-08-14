@@ -11,6 +11,8 @@ typedef struct GameBoy_Display {
     SDL_Texture* texture;
     SDL_Event event;
     bool is_running;
+    uint8_t buttons;
+    uint8_t d_pad;
 } GameBoy_Display;
 
 struct GameBoy_Display* LCD;
@@ -19,6 +21,8 @@ void lcd_init();
 void lcd_free();
 void process_events();
 void lcd_update_screen();
-void lcd_update_pixel(PIXEL_DATA* pixel_data);
+void lcd_update_pixel(const PIXEL_DATA* pixel_data);
 void lcd_update_screen();
+uint8_t get_d_pad();
+uint8_t get_buttons();
 #endif //GB_EMU_SCREEN_H

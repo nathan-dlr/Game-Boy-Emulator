@@ -84,7 +84,7 @@ static void construct_pixel_data() {
     uint8_t pixel;
     enum FETCH_SOURCE source = PPU->FETCH_TYPE;
     bool is_obj = source == OBJECT;
-    OAM_STRUCT* obj = heap_peek();
+    const OAM_STRUCT* obj = heap_peek();
     for (int8_t i = 7, j = 0; i >= 0; i--, j++) {
         bit_0 = (data_low >> i) & 0x01;
         bit_1 = (data_high >> i) & 0x01;
@@ -141,7 +141,7 @@ static void get_tile_data_low() {
     }
     //add offset from pixel's y_position in the tile
     if (PPU->FETCH_TYPE == BACKGROUND) {
-        PPU->TILE_ADDRESS += 2 * (((MEMORY[LY] + MEMORY[SCY])) % 8);
+        PPU->TILE_ADDRESS += 2 * ((MEMORY[LY] + MEMORY[SCY]) % 8);
     }
     else if (PPU->FETCH_TYPE == WINDOW) {
         PPU->TILE_ADDRESS += 2 * ((PPU->WINDOW_LINE_COUNTER) % 8);
@@ -207,9 +207,6 @@ static void pop_pixel() {
         if (MEMORY[LCDC] & 0x01) {
             bool transparent = obj_pixel_data.binary_data == 0x00;
             bool priority = obj_pixel_data.priority && (bg_pixel_data.binary_data != 0x00);
-            if (obj_pixel_data.priority && obj_pixel_data.binary_data != 0x00) {
-                0+0;
-            }
             pixel_data = transparent || priority ? bg_pixel_data : obj_pixel_data;
         }
         if (!(MEMORY[LCDC] & 0x02)) {
@@ -249,7 +246,7 @@ static void pixel_renderer() {
         return;
     }
     //check for object
-    OAM_STRUCT* obj = heap_peek();
+    const OAM_STRUCT* obj = heap_peek();
     if (obj && obj->x_pos < PPU->RENDER_X + 8) {
         heap_delete_min();
         obj = heap_peek();

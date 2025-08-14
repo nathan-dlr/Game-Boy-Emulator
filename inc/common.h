@@ -62,6 +62,9 @@
 #define IE 0xFFFF
 #define UNUSED_VAL 0x00
 
+#define SET_BIT(bit, value) (bit | value)
+#define CLEAR_BIT(bit, value) (~bit & value)
+
 enum FETCH_SOURCE {
     BACKGROUND,
     WINDOW,

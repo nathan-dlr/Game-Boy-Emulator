@@ -7,6 +7,17 @@
 
 #define SCALE 4
 
+#define A_BIT 0x01
+#define RIGHT_BIT 0x01
+#define B_BIT 0x02
+#define LEFT_BIT 0x02
+#define SELECT_BIT 0x04
+#define UP_BIT 0x04
+#define START_BIT 0x08
+#define DOWN_BIT 0x08
+
+
+
 static const uint32_t COLORS_RGB[4] = {
         0xFFFFFFFF, // White
         0xAAAAAAFF, // Light Gray
@@ -38,6 +49,8 @@ void lcd_init() {
     LCD->texture = SDL_CreateTextureFromSurface(LCD->renderer, LCD->surface);
 
     LCD->is_running = true;
+    LCD->buttons = 0xFF;
+    LCD->d_pad = 0xFF;
 }
 
 void process_events() {
@@ -46,6 +59,81 @@ void process_events() {
             case SDL_EVENT_QUIT:
                 LCD->is_running = false;
                 break;
+            case SDL_EVENT_KEY_DOWN:
+                switch (LCD->event.key.scancode) {
+                    case SDL_SCANCODE_H:
+                        LCD->buttons = CLEAR_BIT(A_BIT, LCD->buttons);
+                        MEMORY[IF] |= 0x10;
+                        break;
+                    case SDL_SCANCODE_D:
+                        LCD->d_pad = CLEAR_BIT(RIGHT_BIT, LCD->d_pad);
+                        MEMORY[IF] |= 0x10;
+                        break;
+                    case SDL_SCANCODE_J:
+                        LCD->buttons = CLEAR_BIT(B_BIT, LCD->buttons);
+                        MEMORY[IF] |= 0x10;
+                        break;
+                    case SDL_SCANCODE_A:
+                        LCD->d_pad = CLEAR_BIT(LEFT_BIT, LCD->d_pad);
+                        MEMORY[IF] |= 0x10;
+                        break;
+                    case SDL_SCANCODE_L:
+                        LCD->buttons = CLEAR_BIT(START_BIT, LCD->buttons);
+                        MEMORY[IF] |= 0x10;
+                        break;
+                    case SDL_SCANCODE_S:
+                        LCD->d_pad = CLEAR_BIT(DOWN_BIT, LCD->d_pad);
+                        MEMORY[IF] |= 0x10;
+                        break;
+                    case SDL_SCANCODE_K:
+                        LCD->buttons = CLEAR_BIT(SELECT_BIT, LCD->buttons);
+                        MEMORY[IF] |= 0x10;
+                        break;
+                    case SDL_SCANCODE_W:
+                        LCD->d_pad = CLEAR_BIT(UP_BIT, LCD->d_pad);
+                        MEMORY[IF] |= 0x10;
+                        break;
+                    default:
+                        break;
+                }
+                break;
+            case SDL_EVENT_KEY_UP:
+                switch (LCD->event.key.scancode) {
+                    case SDL_SCANCODE_H:
+                        LCD->buttons = SET_BIT(A_BIT, LCD->buttons);
+                        MEMORY[IF] |= 0x10;
+                        break;
+                    case SDL_SCANCODE_D:
+                        LCD->d_pad = SET_BIT(RIGHT_BIT, LCD->d_pad);
+                        MEMORY[IF] |= 0x10;
+                        break;
+                    case SDL_SCANCODE_J:
+                        LCD->buttons = SET_BIT(B_BIT, LCD->buttons);
+                        MEMORY[IF] |= 0x10;
+                        break;
+                    case SDL_SCANCODE_A:
+                        LCD->d_pad = SET_BIT(LEFT_BIT, LCD->d_pad);
+                        MEMORY[IF] |= 0x10;
+                        break;
+                    case SDL_SCANCODE_L:
+                        LCD->buttons = SET_BIT(START_BIT, LCD->buttons);
+                        MEMORY[IF] |= 0x10;
+                        break;
+                    case SDL_SCANCODE_S:
+                        LCD->d_pad = SET_BIT(DOWN_BIT, LCD->d_pad);
+                        MEMORY[IF] |= 0x10;
+                        break;
+                    case SDL_SCANCODE_K:
+                        LCD->buttons = SET_BIT(SELECT_BIT, LCD->buttons);
+                        MEMORY[IF] |= 0x10;
+                        break;
+                    case SDL_SCANCODE_W:
+                        LCD->d_pad = SET_BIT(UP_BIT, LCD->d_pad);
+                        MEMORY[IF] |= 0x10;
+                        break;
+                    default:
+                        break;
+                }
             default:
                 break;
         }
@@ -59,14 +147,14 @@ void lcd_update_screen() {
     SDL_RenderPresent(LCD->renderer);
 }
 
-void lcd_update_pixel(PIXEL_DATA* pixel_data) {
+void lcd_update_pixel(const PIXEL_DATA* pixel_data) {
     uint8_t palette;
     uint8_t pixel_color;
     uint32_t pixel_rgb;
     uint8_t color_index = pixel_data->binary_data;
     enum FETCH_SOURCE source = pixel_data->source;
 
-    if (((source == BACKGROUND || source == WINDOW)) && (MEMORY[LCDC] & 0x01)) {
+    if ((source == BACKGROUND || source == WINDOW) && (MEMORY[LCDC] & 0x01)) {
         palette = MEMORY[BGP];
         pixel_color = (palette >> (color_index * 2)) & 0x03;
         pixel_rgb = COLORS_RGB[pixel_color];
@@ -85,7 +173,7 @@ void lcd_update_pixel(PIXEL_DATA* pixel_data) {
 
     int gb_x = PPU->RENDER_X;
     int gb_y = MEMORY[LY];
-    
+
     for (int dy = 0; dy < SCALE; dy++) {
         for (int dx = 0; dx < SCALE; dx++) {
             int x_offset = gb_x * SCALE + dx;
