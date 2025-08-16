@@ -77,6 +77,10 @@ void read_memory(uint8_t UNUSED) {
         }
         return;
     }
+    if (CPU->ADDRESS_BUS == SB) {
+        CPU->DATA_BUS = 0xFF;
+        return;
+    }
 //    if ((PPU->STATE == OAM_SEARCH) && (CPU->ADDRESS_BUS >= 0xFE00) && CPU->ADDRESS_BUS <= 0xFE9F) {
 //        CPU->DATA_BUS = 0xFF;
 //        return;
@@ -99,6 +103,9 @@ void write_memory(uint8_t UNUSED) {
     if (CPU->ADDRESS_BUS == DMA) {
         CPU->STATE = OAM_DMA_TRANSFER;
         CPU->DMA_CYCLE = 0;
+    }
+    if (CPU->ADDRESS_BUS == 0x2000) {
+        return;
     }
 
 //    if ((PPU->STATE == OAM_SEARCH) && (CPU->ADDRESS_BUS >= 0xFE00) && CPU->ADDRESS_BUS <= 0xFE9F) {

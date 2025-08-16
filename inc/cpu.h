@@ -63,7 +63,6 @@ void write_16bit_reg(uint8_t reg_pair, uint16_t value);
 //Loads
 void ld_r8_imm8(uint8_t dest);
 void ld_rW_imm8(uint8_t load_a);
-void ld_r8_addr_bus(uint8_t dest);
 void ld_r8_data_bus(uint8_t dest);
 void ldh_imm8(uint8_t UNUSED);
 void ld_imm16_sp(uint8_t byte_num);

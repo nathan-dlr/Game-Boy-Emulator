@@ -150,10 +150,6 @@ void pixel_fifo_pop(PIXEL_FIFO* PIXEL_FIFO, PIXEL_DATA* ret) {
     }
 }
 
-uint8_t pixel_fifo_size(const PIXEL_FIFO* PIXEL_FIFO) {
-    return PIXEL_FIFO->size;
-}
-
 bool pixel_fifo_is_empty(const PIXEL_FIFO* PIXEL_FIFO) {
     return PIXEL_FIFO->size == 0;
 }

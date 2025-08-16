@@ -241,14 +241,6 @@ void ld_a_imm16(uint8_t cycle) {
 }
 
 /*
- * Loads [ADDR_BUS] into 8bit register indicated by DEST
- */
-void ld_r8_addr_bus(uint8_t dest) {
-    read_memory(UNUSED_VAL);
-    CPU->REGS[dest] = CPU->DATA_BUS;
-}
-
-/*
  * Loads data from CPU->DATA_BUS into 8bit reg indicated by DEST
  */
 void ld_r8_data_bus(uint8_t dest) {
