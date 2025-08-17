@@ -12,6 +12,9 @@
 #define TAC_ENABlE(tac) (tac & 0x04)
 #define TAC_CLOCK_SELECT(tac) (tac & 0x03)
 #define DIV_INCREMENT 256
+#define CLOCK_FREQ 4194304.0
+#define CYCLES_PER_FRAME 70224
+#define FRAME_TIME_MS    (1000.0 * CYCLES_PER_FRAME / CLOCK_FREQ) // ~16.74 ms
 
 static void memory_init(const char* file_name);
 static void io_ports_init();
@@ -21,6 +24,7 @@ static void increment_timers();
 static uint16_t timer_internal_counter;
 static uint16_t div_internal_counter;
 static uint16_t cycles_to_increment_timer;
+static bool refresh;
 
 
 void free_resources() {
@@ -45,15 +49,31 @@ int main(int argc, char* argv[]) {
     ppu_init();
     queue_init();
     lcd_init();
-    uint8_t cycles = 0;
+    uint8_t ppu_cycles = 0;
+    refresh = false;
     while (LCD->is_running) {
-        execute_next_PPU_cycle();
-        cycles++;
-        if (cycles == 4) {
-            execute_next_CPU_cycle();
-            increment_timers();
-            check_sp();
-            cycles = 0;
+        uint64_t frame_start = SDL_GetPerformanceCounter();
+
+        while (!refresh) {
+            execute_next_PPU_cycle();
+            ppu_cycles++;
+            if (ppu_cycles == 4) {
+                execute_next_CPU_cycle();
+                increment_timers();
+                check_sp();
+                ppu_cycles = 0;
+            }
+        }
+        process_events();
+        lcd_update_screen();
+        refresh = false;
+
+        //frame limiter
+        uint64_t frame_end = SDL_GetPerformanceCounter();
+        double elapsed_ms = (double)(frame_end - frame_start) * 1000.0 / (double)SDL_GetPerformanceFrequency();
+
+        if (elapsed_ms < FRAME_TIME_MS) {
+            SDL_Delay((uint32_t)(FRAME_TIME_MS - elapsed_ms));
         }
     }
     free_resources();
@@ -263,4 +283,8 @@ static void check_sp() {
 
         MEMORY[SC] = 0;
     }
+}
+
+void set_refresh() {
+    refresh = true;
 }

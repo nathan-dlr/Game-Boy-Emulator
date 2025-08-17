@@ -321,8 +321,7 @@ void v_blank() {
             MEMORY[IF] |= 0x02;
         }
         heap_clear();
-        process_events();
-        lcd_update_screen();
+        set_refresh();
     }
 }
 
