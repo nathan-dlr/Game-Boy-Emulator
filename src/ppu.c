@@ -326,21 +326,6 @@ void v_blank() {
 }
 
 void execute_next_PPU_cycle() {
-    if ((PPU->RENDER_LINE_CYCLE > 80) && (PPU->STATE == OAM_SEARCH)) {
-        perror("OAM search exceeded 80 t cycles");
-        free_resources();
-        exit(1);
-    }
-    if ((PPU->RENDER_LINE_CYCLE > 369) && (PPU->STATE == PIXEL_TRANSFER)) {
-        perror("Pixel transfer exceeded max cycles");
-        free_resources();
-        exit(1);
-    }
-    if (PPU->RENDER_LINE_CYCLE > CYCLES_PER_LINE) {
-        perror("Render line cycle greater than cycles per line");
-        free_resources();
-        exit(1);
-    }
     if (PPU->PENALTY) {
         if (PPU->STATE == PIXEL_TRANSFER) {
             pixel_renderer();

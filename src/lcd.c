@@ -26,7 +26,7 @@ static const uint32_t COLORS_RGB[4] = {
 };
 
 void lcd_init() {
-    LCD = (GameBoy_Display*) malloc(sizeof(GameBoy_Display));
+    LCD = (GameBoy_Display*)malloc(sizeof(GameBoy_Display));
 
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         fprintf(stderr, "Error initializing SDL3: %s\n", SDL_GetError());
@@ -193,7 +193,14 @@ void lcd_free() {
             SDL_DestroyWindow(LCD->window);
             LCD->window = NULL;
         }
-
+        if (LCD->surface) {
+            SDL_DestroySurface(LCD->surface);
+            LCD->surface = NULL;
+        }
+        if (LCD->texture) {
+            SDL_DestroyTexture(LCD->surface);
+            LCD->texture = NULL;
+        }
         SDL_Quit();
         free(LCD);
     }
