@@ -9,6 +9,7 @@
 #include <queue.h>
 #include <gb.h>
 #define ROM_SIZE 0x8000
+#define BANK_SIZE 0x4000
 #define TAC_ENABlE(tac) (tac & 0x04)
 #define TAC_CLOCK_SELECT(tac) (tac & 0x03)
 #define DIV_INCREMENT 256
@@ -31,11 +32,11 @@ void free_resources() {
     printf("Freeing resources\n");
     free(CPU);
     free(MEMORY);
+    free(ROM);
     queue_free();
     ppu_free();
     heap_free();
     lcd_free();
-    exit(0);
 }
 
 /*
@@ -84,6 +85,10 @@ int main(int argc, char* argv[]) {
  */
 void read_memory(uint8_t UNUSED) {
     (void)UNUSED;
+    if (CPU->ADDRESS_BUS < 0x8000) {
+        CPU->DATA_BUS = ROM[CPU->ADDRESS_BUS];
+        return;
+    }
     if (CPU->ADDRESS_BUS == P1) {
         uint8_t inputs = MEMORY[P1];
         if ((inputs & 0x10) == 0x10) {
@@ -124,7 +129,7 @@ void write_memory(uint8_t UNUSED) {
         CPU->STATE = OAM_DMA_TRANSFER;
         CPU->DMA_CYCLE = 0;
     }
-    if (CPU->ADDRESS_BUS == 0x2000) {
+    if (CPU->ADDRESS_BUS < 0x8000) {
         return;
     }
 
@@ -204,18 +209,40 @@ static void increment_timers() {
  * Opens .gb file and reads it into memory
  */
 static void memory_init(const char* file_name) {
-    MEMORY = malloc(0xFFFF);
     FILE* gb_game =  fopen(file_name, "rb");
-    if (gb_game != NULL) {
-        fread(MEMORY, sizeof(uint8_t), ROM_SIZE, gb_game);
-        if (ferror(gb_game) != 0) {
-            fputs("Error reading file", stderr);
-        }
-    }
-    else {
+
+    if (!gb_game) {
         perror("Couldn't open .gb file");
+        free(MEMORY);
         exit(1);
     }
+    uint8_t header;
+    fseek(gb_game, 0x0147, SEEK_SET);
+    fread(&header, sizeof(uint8_t), 1, gb_game);
+    uint32_t rom_size;
+    switch (header) {
+        case 0:
+            rom_size = BANK_SIZE * 2;
+            break;
+        case 1:
+            rom_size = BANK_SIZE * 4;
+            break;
+        case 2:
+            rom_size = BANK_SIZE * 8;
+            break;
+        case 3:
+            rom_size = BANK_SIZE * 16;
+            break;
+        default:
+            perror("Cartridge not yet supported");
+            free(MEMORY);
+            exit(1);
+    }
+
+    MEMORY = malloc(0x10000);
+    ROM = malloc(rom_size);
+    fseek(gb_game, 0, SEEK_SET);
+    fread(ROM, sizeof(uint8_t), rom_size, gb_game);
     fclose(gb_game);
     io_ports_init();
 }

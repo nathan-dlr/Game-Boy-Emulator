@@ -2,6 +2,8 @@
 #define GB_EMU_GB_H
 
 uint8_t* MEMORY;
+uint8_t* ROM;
+
 unsigned long long CYCLE_COUNT;
 
 void read_memory(uint8_t UNUSED);
