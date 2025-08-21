@@ -33,7 +33,7 @@ void lcd_init() {
         exit(1);
     }
 
-    LCD->window = SDL_CreateWindow("Game Boy", WINDOW_WIDTH * SCALE, WINDOW_HEIGHT * SCALE, 0);
+    LCD->window = SDL_CreateWindow("ByteBoy", WINDOW_WIDTH * SCALE, WINDOW_HEIGHT * SCALE, 0);
     if (!LCD->window) {
         fprintf(stderr, "Error creating window: %s\n", SDL_GetError());
         exit(1);
