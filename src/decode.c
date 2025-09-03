@@ -1,11 +1,7 @@
-#include <stdint.h>
-#include <stdbool.h>
-#include <stdio.h>
 #include <common.h>
 #include <cpu.h>
-#include <gb.h>
 #include <queue.h>
-#include <ppu.h>
+#include <memory.h>
 #include <decode.h>
 
 #define PREFIX 0xCB

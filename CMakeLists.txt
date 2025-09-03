@@ -22,6 +22,8 @@ add_executable(gb_emu
         src/lcd.c
         src/ppu.c
         src/min_heap.c
+        src/memory.c
+        inc/memory.h
 )
 
 target_include_directories(gb_emu PUBLIC inc)

@@ -1,6 +1,11 @@
 #ifndef GB_EMU_COMMON_H
 #define GB_EMU_COMMON_H
 
+#include <stdint.h>
+#include <stdlib.h>
+#include <stdbool.h>
+#include <stdio.h>
+
 #define WINDOW_WIDTH 160
 #define WINDOW_HEIGHT 144
 

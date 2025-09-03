@@ -1,5 +1,3 @@
-#include <stdint.h>
-#include <stdlib.h>
 #include <common.h>
 #include <ppu.h>
 #include <min_heap.h>

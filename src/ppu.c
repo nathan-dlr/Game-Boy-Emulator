@@ -1,10 +1,9 @@
-#include <stdint.h>
-#include <stdlib.h>
 #include <common.h>
 #include <gb.h>
 #include <min_heap.h>
 #include <lcd.h>
 #include <queue.h>
+#include <memory.h>
 #include <ppu.h>
 
 #define BITS_PER_TILE 16

@@ -1,7 +1,5 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <gb.h>
 #include <common.h>
+#include <gb.h>
 #include <ppu.h>
 #include <min_heap.h>
 #include <queue.h>

@@ -1,10 +1,7 @@
-#include <stdint.h>
-#include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <gb.h>
-#include <decode.h>
 #include <common.h>
+#include <gb.h>
+#include <memory.h>
+#include <decode.h>
 #include <queue.h>
 #include <ppu.h>
 #include <cpu.h>

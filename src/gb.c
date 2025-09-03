@@ -1,14 +1,11 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
 #include <common.h>
 #include <cpu.h>
 #include <ppu.h>
 #include <min_heap.h>
 #include <lcd.h>
 #include <queue.h>
+#include <memory.h>
 #include <gb.h>
-#define ROM_SIZE 0x8000
 #define BANK_SIZE 0x4000
 #define TAC_ENABlE(tac) (tac & 0x04)
 #define TAC_CLOCK_SELECT(tac) (tac & 0x03)
@@ -32,7 +29,7 @@ void free_resources() {
     printf("Freeing resources\n");
     free(CPU);
     free(MEMORY);
-    free(ROM);
+    free(CARTRIDGE->MEMORY);
     queue_free();
     ppu_free();
     heap_free();
@@ -78,100 +75,6 @@ int main(int argc, char* argv[]) {
         }
     }
     free_resources();
-}
-
-/*
- * Reads byte pointed to by CPU->ADDRESS_BUS onto CPU->DATA_BUS
- */
-void read_memory(uint8_t UNUSED) {
-    (void)UNUSED;
-    if (CPU->ADDRESS_BUS < 0x8000) {
-        CPU->DATA_BUS = ROM[CPU->ADDRESS_BUS];
-        return;
-    }
-    if (CPU->ADDRESS_BUS == P1) {
-        uint8_t inputs = MEMORY[P1];
-        if ((inputs & 0x10) == 0x10) {
-            CPU->DATA_BUS = 0x10 | (LCD->buttons & 0x0F);
-        }
-        else if ((inputs & 0x20) == 0x20) {
-            CPU->DATA_BUS = 0x20 | (LCD->d_pad & 0x0F);
-        }
-        else {
-            CPU->DATA_BUS = 0xFF;
-        }
-        return;
-    }
-    if (CPU->ADDRESS_BUS == SB) {
-        CPU->DATA_BUS = 0xFF;
-        return;
-    }
-//    if ((PPU->STATE == OAM_SEARCH) && (CPU->ADDRESS_BUS >= 0xFE00) && CPU->ADDRESS_BUS <= 0xFE9F) {
-//        CPU->DATA_BUS = 0xFF;
-//        return;
-//    }
-//    if ((PPU->STATE == PIXEL_TRANSFER) && (CPU->ADDRESS_BUS >= 0x8000) && (CPU->ADDRESS_BUS <= 0x9FFF)) {
-//        CPU->DATA_BUS = 0xFF;
-//        return;
-//    }
-
-    CPU->DATA_BUS = MEMORY[CPU->ADDRESS_BUS];
-}
-
-/*
- * Writes byte in CPU->DATA_BUS into the memory location
- * pointed to by CPU->ADDRESS_BUS
- */
-void write_memory(uint8_t UNUSED) {
-    (void)UNUSED;
-    //TODO 2 CYCLE DELAY FOR OAM DMA?
-    if (CPU->ADDRESS_BUS == DMA) {
-        CPU->STATE = OAM_DMA_TRANSFER;
-        CPU->DMA_CYCLE = 0;
-    }
-    if (CPU->ADDRESS_BUS < 0x8000) {
-        return;
-    }
-
-//    if ((PPU->STATE == OAM_SEARCH) && (CPU->ADDRESS_BUS >= 0xFE00) && CPU->ADDRESS_BUS <= 0xFE9F) {
-//        return;
-//    }
-//    if ((PPU->STATE == PIXEL_TRANSFER) && (CPU->ADDRESS_BUS >= 0x8000) && (CPU->ADDRESS_BUS <= 0x9FFF)) {
-//        return;
-//    }
-
-    if (CPU->ADDRESS_BUS == STAT) {
-        MEMORY[STAT] = (MEMORY[STAT] & 0x07) | (CPU->DATA_BUS & 0xF8);
-        return;
-    }
-    if (CPU->ADDRESS_BUS == P1) {
-        MEMORY[P1] = (MEMORY[P1] & 0x0F) | (CPU->DATA_BUS & 0xF0);
-        return;
-    }
-
-    MEMORY[CPU->ADDRESS_BUS] = CPU->DATA_BUS;
-
-    if (CPU->ADDRESS_BUS == TAC) {
-        switch (TAC_CLOCK_SELECT(MEMORY[TAC])) {
-            case 0:
-                cycles_to_increment_timer = 256;
-                break;
-            case 1:
-                cycles_to_increment_timer = 4;
-                break;
-            case 2:
-                cycles_to_increment_timer = 16;
-                break;
-            case 3:
-                cycles_to_increment_timer = 64;
-                break;
-            default:
-                perror("Error in write memory");
-        }
-    }
-    if (CPU->ADDRESS_BUS == DIV) {
-        MEMORY[DIV] = 0x00;
-    }
 }
 
 void OAM_DMA() {
@@ -240,9 +143,10 @@ static void memory_init(const char* file_name) {
     }
 
     MEMORY = malloc(0x10000);
-    ROM = malloc(rom_size);
+    CARTRIDGE = malloc(sizeof(CARTRIDGE_STRUCT));
+    CARTRIDGE->MEMORY = malloc(rom_size);
     fseek(gb_game, 0, SEEK_SET);
-    fread(ROM, sizeof(uint8_t), rom_size, gb_game);
+    fread(CARTRIDGE->MEMORY, sizeof(uint8_t), rom_size, gb_game);
     fclose(gb_game);
     io_ports_init();
 }
@@ -314,4 +218,23 @@ static void check_sp() {
 
 void set_refresh() {
     refresh = true;
+}
+
+void set_tac() {
+    switch (TAC_CLOCK_SELECT(MEMORY[TAC])) {
+        case 0:
+            cycles_to_increment_timer = 256;
+            break;
+        case 1:
+            cycles_to_increment_timer = 4;
+            break;
+        case 2:
+            cycles_to_increment_timer = 16;
+            break;
+        case 3:
+            cycles_to_increment_timer = 64;
+            break;
+        default:
+            perror("Error in write memory");
+    }
 }

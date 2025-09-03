@@ -1,6 +1,5 @@
-#include <stdlib.h>
-#include <stdbool.h>
 #include <common.h>
+#include <memory.h>
 #include <gb.h>
 #include <ppu.h>
 #include <lcd.h>
@@ -198,7 +197,7 @@ void lcd_free() {
             LCD->surface = NULL;
         }
         if (LCD->texture) {
-            SDL_DestroyTexture(LCD->surface);
+            SDL_DestroyTexture(LCD->texture);
             LCD->texture = NULL;
         }
         SDL_Quit();
