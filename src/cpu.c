@@ -52,6 +52,9 @@ void cpu_init() {
 void execute_next_CPU_cycle() {
     if (is_empty(INSTR_QUEUE)) {
         if (!check_interrupts() && CPU->STATE == RUNNING) {
+            if (read_16bit_reg(PC) == 0xc302) {
+                0+0;
+            }
             //fetch
             read_next_byte();
             decode();

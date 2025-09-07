@@ -1,14 +1,15 @@
 #ifndef GB_EMU_MEMORY_H
 #define GB_EMU_MEMORY_H
 
-enum HEADERS {
+enum CARTRIDGES {
     MBC0,
     MBC1
 };
 
 typedef struct CARTRIDGE_STRUCT {
-    enum HEADERS HEADER;
-    uint8_t* MEMORY;
+    enum CARTRIDGES CART_TYPE;
+    uint8_t* ROM;
+    uint8_t* RAM;
     uint32_t ROM_SIZE;
     uint32_t RAM_SIZE;
     uint8_t CART_ROM_BANK;
@@ -16,7 +17,7 @@ typedef struct CARTRIDGE_STRUCT {
     uint8_t RAM_BANK;
     bool BANK_MODE;
     bool RAM_ENABLE;
-    const uint16_t BANKS_IN_CART;
+    uint16_t NUM_ROM_BANKS;
 } CARTRIDGE_STRUCT;
 
 uint8_t* MEMORY;

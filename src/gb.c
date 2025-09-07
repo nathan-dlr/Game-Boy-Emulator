@@ -6,7 +6,8 @@
 #include <queue.h>
 #include <memory.h>
 #include <gb.h>
-#define BANK_SIZE 0x4000
+#define ROM_BANK_SIZE 0x4000 //16KiB
+#define RAM_BANK_SIZE 0x2000 //8KiB
 #define TAC_ENABlE(tac) (tac & 0x04)
 #define TAC_CLOCK_SELECT(tac) (tac & 0x03)
 #define DIV_INCREMENT 256
@@ -29,7 +30,10 @@ void free_resources() {
     printf("Freeing resources\n");
     free(CPU);
     free(MEMORY);
-    free(CARTRIDGE->MEMORY);
+    free(CARTRIDGE->ROM);
+    if (CARTRIDGE->RAM) {
+        free(CARTRIDGE->RAM);
+    }
     queue_free();
     ppu_free();
     heap_free();
@@ -108,46 +112,81 @@ static void increment_timers() {
     }
 }
 
+static enum CARTRIDGES set_cartridge_type(FILE* gb_file) {
+    uint8_t header;
+    fseek(gb_file, 0x0147, SEEK_SET);
+    fread(&header, sizeof(uint8_t), 1, gb_file);
+    switch (header) {
+        case 0:
+            return MBC0;
+            break;
+        case 1:
+        case 2:
+        case 3:
+            return MBC1;
+            break;
+        default:
+            perror("Memory bank cartridge not supported");
+            exit(0);
+    }
+}
+
+static uint32_t get_num_rom_banks(FILE* gb_file) {
+    uint8_t rom_header;
+    fread(&rom_header, sizeof(uint8_t), 1, gb_file);
+    fseek(gb_file, 0x0148, SEEK_SET);
+    return 2 * (1 << rom_header);
+}
+
+static uint32_t get_ram_size(FILE* gb_file) {
+    uint8_t ram_header;
+    fread(&ram_header, sizeof(uint8_t), 1, gb_file);
+    fseek(gb_file, 0x0148, SEEK_SET);
+    switch (ram_header) {
+        case 2:
+            return RAM_BANK_SIZE;
+            break;
+        case 3:
+            return RAM_BANK_SIZE * 4;
+            break;
+        case 4:
+            return RAM_BANK_SIZE * 16;
+            break;
+        case 5:
+            return RAM_BANK_SIZE * 8;
+            break;
+        default:
+            return 0;
+
+    }
+}
 /*
  * Opens .gb file and reads it into memory
  */
 static void memory_init(const char* file_name) {
-    FILE* gb_game =  fopen(file_name, "rb");
-
-    if (!gb_game) {
+    FILE* gb_file =  fopen(file_name, "rb");
+    if (!gb_file) {
         perror("Couldn't open .gb file");
-        free(MEMORY);
         exit(1);
     }
-    uint8_t header;
-    fseek(gb_game, 0x0147, SEEK_SET);
-    fread(&header, sizeof(uint8_t), 1, gb_game);
-    uint32_t rom_size;
-    switch (header) {
-        case 0:
-            rom_size = BANK_SIZE * 2;
-            break;
-        case 1:
-            rom_size = BANK_SIZE * 4;
-            break;
-        case 2:
-            rom_size = BANK_SIZE * 8;
-            break;
-        case 3:
-            rom_size = BANK_SIZE * 16;
-            break;
-        default:
-            perror("Cartridge not yet supported");
-            free(MEMORY);
-            exit(1);
-    }
+
+    enum CARTRIDGES cart_type = set_cartridge_type(gb_file);
+    uint16_t num_rom_banks = get_num_rom_banks(gb_file);
+    uint32_t rom_size = ROM_BANK_SIZE * num_rom_banks;
+    uint32_t ram_size = get_ram_size(gb_file);
 
     MEMORY = malloc(0x10000);
     CARTRIDGE = malloc(sizeof(CARTRIDGE_STRUCT));
-    CARTRIDGE->MEMORY = malloc(rom_size);
-    fseek(gb_game, 0, SEEK_SET);
-    fread(CARTRIDGE->MEMORY, sizeof(uint8_t), rom_size, gb_game);
-    fclose(gb_game);
+    CARTRIDGE->ROM = malloc(rom_size);
+    CARTRIDGE->RAM = ram_size ? malloc(ram_size) : nullptr;
+    CARTRIDGE->CART_TYPE = cart_type;
+    CARTRIDGE->ROM_SIZE = rom_size;
+    CARTRIDGE->RAM_SIZE = ram_size;
+    CARTRIDGE->NUM_ROM_BANKS = num_rom_banks;
+
+    fseek(gb_file, 0, SEEK_SET);
+    fread(CARTRIDGE->ROM, sizeof(uint8_t), rom_size, gb_file);
+    fclose(gb_file);
     io_ports_init();
 }
 

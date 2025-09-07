@@ -44,7 +44,7 @@ enum CPU_STATES {
 };
 
 typedef struct CPU_STRUCT {
-    uint16_t REGS[14];
+    uint8_t REGS[14];
     uint8_t IME;
     uint8_t DATA_BUS;
     uint16_t ADDRESS_BUS;
