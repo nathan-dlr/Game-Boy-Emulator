@@ -10,7 +10,7 @@
 
 ## Overview
 ByteBoy is an emulator for the original Game Boy (DMG-01) written in C. So far, this project consists of the CPU and PPU (Picture Processing Unit).
-This emulator can currently play ROM-only games such as Tetris and Dr.Mario. SDL3 is used for the front-end.
+This emulator can currently play MBC1 games. SDL3 is used for the front-end.
 ## CPU 
 The Game Boy uses the Sharp SM83 as its processor. The Sharp SM83 has a 16-bit address space and is byte addressable. Additionally, 
 the SM83 uses a variable-length instruction set consisting of either a byte-long opcode or the prefix 0xCB followed by the opcode. The CPU runs
@@ -46,8 +46,12 @@ This state takes 172-289 T-Cycles to complete.
 ### H-blank 
 After all 160 pixels are drawn in a line, the PPU stalls until 456 T-cycles have elapsed since the start of the line; this can range from 87-204 T-cycles to complete.
 ### V-blank
-After all 144 scan lines are drawn, the PPU waits for 10 scanlines' worth of cycles before starting again at the first scanline.
-### Testing 
+After all 144 scan lines are drawn, the PPU waits for 10 scan lines worth of cycles before starting again at the first scanline.
+## Memory
+Currently, the ByteBoy supports MBC1 and ROM-only titles. When a game attempts to write in ROM, the data being written is instead used to update internal MBC registers that hold information 
+such as ROM/RAM bank number, RAM-enable, and banking mode. When accessing areas of memory that are sourced from the cartridge's external memory, the bank numbers held in the MBC registers are 
+concatenated onto the original address to create the new address needed to index into cartridge memory.
+## Testing 
 The CPU was tested using [Blargg's test ROMS](https://gbdev.gg8.se/files/roms/blargg-gb-tests/) aided by [GameBoy Doctor](https://robertheaton.com/gameboy-doctor/).
 The PPU was tested with [dmg-acid2](https://github.com/mattcurrie/dmg-acid2) by Matt Currie.
 
